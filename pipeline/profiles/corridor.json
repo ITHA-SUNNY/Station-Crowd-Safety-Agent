@@ -1,0 +1,92 @@
+{
+  "name": "corridor",
+  "description": "Handheld walk along a footbridge corridor (moving camera, eye level) - demo only; zone areas are rough estimates",
+  "video": "crowd_new.mp4",
+  "camera_static": false,
+  "zones": {
+    "FOB-FAR": {
+      "polygon": [
+        [
+          0,
+          390
+        ],
+        [
+          1280,
+          390
+        ],
+        [
+          1280,
+          470
+        ],
+        [
+          0,
+          470
+        ]
+      ],
+      "zone_type": "fob",
+      "area_m2": 45.0,
+      "camera_id": "CAM-FOB-WALK",
+      "color": [
+        255,
+        150,
+        0
+      ]
+    },
+    "FOB-MID": {
+      "polygon": [
+        [
+          0,
+          470
+        ],
+        [
+          1280,
+          470
+        ],
+        [
+          1280,
+          600
+        ],
+        [
+          0,
+          600
+        ]
+      ],
+      "zone_type": "fob",
+      "area_m2": 30.0,
+      "camera_id": "CAM-FOB-WALK",
+      "color": [
+        0,
+        255,
+        0
+      ]
+    },
+    "FOB-NEAR": {
+      "polygon": [
+        [
+          0,
+          600
+        ],
+        [
+          1280,
+          600
+        ],
+        [
+          1280,
+          720
+        ],
+        [
+          0,
+          720
+        ]
+      ],
+      "zone_type": "fob",
+      "area_m2": 20.0,
+      "camera_id": "CAM-FOB-WALK",
+      "color": [
+        0,
+        255,
+        255
+      ]
+    }
+  }
+}
