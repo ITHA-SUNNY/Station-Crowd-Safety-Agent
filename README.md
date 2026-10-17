@@ -1,263 +1,240 @@
 # Station Crowd Safety Agent
 
-An early-stage OpenCV-based prototype exploring how computer vision can
-help monitor crowd conditions in railway-station environments. The goal
-is to turn video measurements into zone-level crowd information,
-identify potentially concerning movement patterns, and present
-recommendations for human review.
+Computer-vision decision support for railway-station crowd safety. The system
+turns recorded video into per-zone crowd measurements, applies explainable
+risk rules, and presents recommended actions to a human operator for approval.
 
-> **Project status:** Working prototype. The vision pipeline, risk agent
-> and dashboard run end to end on a recorded video and on mock scenarios.
-> Zone areas and the pixel-to-metre speed factor are **estimates, not a
-> real calibration**, and nothing has been validated against labelled data.
+> **Status: working prototype.** The vision pipeline, risk agent and dashboard
+> run end to end on recorded video and on mock scenarios. Zone areas and the
+> pixel-to-metre speed factor are estimates, not a real calibration, and
+> nothing has been validated against labelled data. See
+> [Limitations](#limitations-and-safety-notes).
 
-## Project goals
+The system **supports human decision-making**. It does not control gates,
+trains or any other railway infrastructure.
 
--   Process recorded crowd video.
--   Detect people and estimate counts within configured zones.
--   Estimate people per square metre when camera perspective and
-    real-world zone dimensions have been calibrated.
--   Explore movement/turbulence indicators using optical flow.
--   Produce explainable risk levels and recommended actions for an
-    operator to review.
--   Present alerts and supporting evidence through a dashboard.
+## Features
 
-The system is intended to **support human decision-making**, not to
-control railway infrastructure or replace trained safety personnel.
+- **Person detection and zone counting** with Ultralytics YOLO and configurable
+  zone polygons.
+- **Density and motion measurement:** people per m², plus turbulence and flow
+  speed from Farneback optical flow (camera motion is compensated for handheld
+  footage).
+- **Explainable risk levels:** Normal, Watch, Warning, Critical, and
+  Can't trust. Every alert lists the rules that triggered it and a
+  recommended action for the zone type.
+- **Human in the loop:** Warning and Critical alerts require operator
+  approval, and a low-confidence or failed camera is never reported as
+  "all clear".
+- **Live dashboard** with an annotated video panel (zones overlaid, faces
+  blurred) kept in sync with the zone cards, an alert feed, and
+  approve/dismiss actions.
+- **Selectable demo profiles:** each bundles a video and a zone layout.
 
-## Current status
+## How it works
 
-### Implemented (prototype)
-
--   `pipeline/vision_pipeline.py`: YOLO person detection, hand-drawn zone
-    polygons, per-zone counts and density, Farneback optical-flow
-    turbulence and speed, quality flags, face-blurred evidence frames, and
-    `ZoneReading` JSONL output.
--   `agent/risk_agent.py`: rule engine (Normal / Watch / Warning /
-    Critical / Can't trust) with density trend, hysteresis, and
-    recommendations by zone type. Alerts follow `agent/alert.schema.json`.
--   `dashboard/`: FastAPI server with live stream, alert list, and
-    approve/dismiss actions.
--   `crowd-agent-week2-start/`: the shared data contract and mock scenarios.
-
-### Not yet done
-
--   Real camera/floor calibration (zone `area_m2` values are estimates).
--   Stable person tracking and smoothed counts.
--   `no_frame` / `camera_moved` detection in the pipeline (only the mock
-    data exercises the Can't trust path for these).
--   Quantitative evaluation against labelled data.
--   Alert history persistence and cloud deployment.
-
-## Repository
-
-``` text
-Station-Crowd-Safety-Agent/
-├── pipeline/
-│   ├── vision_pipeline.py           # video -> ZoneReading JSONL
-│   └── profiles/                    # demo types: video + zone layout
-├── agent/
-│   ├── risk_agent.py                # ZoneReading -> CrowdAlert
-│   ├── run_scenario.py              # runs agent on mock scenarios
-│   └── alert.schema.json
-├── dashboard/                       # FastAPI server + static UI
-├── crowd-agent-week2-start/
-│   ├── contract/                    # zone_reading schema + rules
-│   └── mock/                        # scenario generator and JSONL files
-├── requirements.txt
-└── .gitignore
+```mermaid
+flowchart LR
+    V[Video] --> P[Vision pipeline<br/>YOLO + optical flow]
+    P -- "ZoneReading JSONL<br/>about 1 per zone per second" --> A[Risk agent<br/>rules + trend]
+    A -- "CrowdAlert JSON" --> D[Dashboard<br/>FastAPI + SSE]
+    P -- annotated video --> D
+    D --> O[Operator approves or dismisses]
 ```
 
-## Requirements
+The pipeline and agent communicate only through the data contract in
+[`crowd-agent-week2-start/contract/`](crowd-agent-week2-start/contract/README.md)
+(`zone_reading.schema.json`), so each side can be developed and tested
+independently with mock data.
 
--   Windows, Linux, or macOS (commands below use Windows Command
-    Prompt).
--   Python compatible with the installed packages.
--   Git.
--   Internet access for initial package installation and model download.
+### Risk rules
 
-`requirements.txt` lists `opencv-python`, `ultralytics`, `fastapi` and
-`uvicorn`. Ultralytics may install additional dependencies, including PyTorch.
-Installation time and hardware requirements vary.
+Evaluated per zone, most severe first. Thresholds live as constants at the top
+of [`agent/risk_agent.py`](agent/risk_agent.py).
 
-## Setup on Windows
+| Level | Trigger | Agent action |
+|---|---|---|
+| Can't trust | confidence < 0.5, or flag `no_frame` / `camera_moved` | Ask a human to check the camera |
+| Critical | density ≥ 5 p/m², or turbulence ≥ 0.5 with density ≥ 4 | Urgent recommendation, escalate if not approved in 60 s |
+| Warning | density ≥ 4 p/m², or rising ≥ 1.0 p/m²/min and projected to reach 4 within a minute | Recommend an action, ask an official to approve |
+| Watch | density 2 to 4 p/m², or rising > 0.5 p/m²/min | Show on dashboard, no alert |
+| Normal | otherwise | Keep watching |
 
-### 1. Clone the repository
+The trend is a linear regression over a 60 s window and is only used once 30
+readings are available. Hysteresis stops a zone hovering on a threshold from
+flapping between levels. The danger thresholds follow the commonly cited
+4 to 5 people/m² crush-risk range and are **starting values to be tuned, not
+validated safety limits**.
 
-``` cmd
+## Quick start
+
+Requires Python 3 and Git. The first install downloads PyTorch via
+Ultralytics, so allow time and disk space.
+
+```cmd
 git clone https://github.com/ITHA-SUNNY/Station-Crowd-Safety-Agent.git
 cd Station-Crowd-Safety-Agent
-```
-
-### 2. Create and activate a virtual environment
-
-``` cmd
 py -m venv .venv
 .venv\Scripts\activate
-```
-
-If `py` is not available, try `python` instead.
-
-### 3. Install dependencies
-
-``` cmd
-python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 ```
 
-### 4. Obtain the YOLO model
+On Linux or macOS, activate with `source .venv/bin/activate` instead.
 
-The development prototype uses the `yolo11n.pt` model file. If it is not
-present locally, one way to obtain it is to install Ultralytics and run:
+The YOLO weights (`yolo11n.pt`) download automatically on first use, or fetch
+them explicitly:
 
-``` cmd
+```cmd
 python -c "from ultralytics import YOLO; YOLO('yolo11n.pt')"
 ```
 
-This requires internet access and may download model weights. Check the
-model's applicable terms before redistributing the weights. The model
-file is excluded from Git by `.gitignore`.
+### 1. Try the agent on mock data (no video needed)
 
-## Running the prototype
+```cmd
+python agent/run_scenario.py
+```
 
-Run everything from the repository root.
+Runs three scenarios (normal, buildup, bad camera) and prints a PASS/FAIL
+summary against the expected behaviour in the contract.
 
-**1. Vision pipeline.** Pick a demo type with `--profile`. Each profile
-bundles a video and a zone layout (`pipeline/profiles/*.json`):
+### 2. Run the vision pipeline on a demo profile
 
-| Profile | Video | Camera | Zones |
+Videos are not stored in the repository. Place the file named in the profile
+in the repository root, then run the pipeline:
+
+| Profile | Video file | Camera | Zones |
 |---|---|---|---|
-| `platform` (default) | `crowd.mp4` | fixed | FOB stairs, two platform edges, two waiting areas |
-| `corridor` | `crowd_new.mp4` (see licence note below) | handheld | far / mid / near footbridge bands |
+| `platform` (default) | `crowd.mp4` (supply your own permitted footage) | fixed | FOB stairs, two platform edges, two waiting areas |
+| `corridor` | `crowd_new.mp4` (see [Data and licences](#data-and-licences)) | handheld | far, mid and near footbridge bands |
 
-``` cmd
+```cmd
 python pipeline/vision_pipeline.py --profile platform
 python pipeline/vision_pipeline.py --profile corridor
 ```
 
 Output goes to `live_readings.jsonl` (platform) or
-`live_readings_<profile>.jsonl`. Use `--video` to override a profile's
-video. The `corridor` profile is a rough demo: the camera moves (camera
-motion is subtracted from the optical flow) and zone areas are guesses.
-To add a demo type, copy a profile JSON, edit the polygons, `zone_type`,
-`area_m2` and `video`, and pass its name to `--profile`.
+`live_readings_<profile>.jsonl`, plus an annotated video
+(`output_annotated*.mp4`) and evidence frames in `pipeline/frames/`. Useful
+options: `--video`, `--model`, `--out`, `--save-video`, `--no-blur`,
+`--show` (press `q` to close the preview).
 
-Other options: `--model`, `--out`, `--save-video`, `--no-blur`, `--show`
-(press `q` to close the preview).
+**Adding a demo type:** copy a file in `pipeline/profiles/`, edit the polygons,
+`zone_type`, `area_m2`, `camera_id` and `video`, then pass its name to
+`--profile`. Polygon coordinates are pixels in the video frame.
 
-**2. Risk agent on the mock scenarios** (prints a PASS/FAIL summary):
+### 3. Start the dashboard
 
-``` cmd
-python agent/run_scenario.py
-python agent/risk_agent.py live_readings.jsonl -v
+```cmd
+python dashboard/server.py --scenario live_platform
 ```
 
-**3. Dashboard:**
+Open <http://127.0.0.1:8000>.
 
-``` cmd
-python dashboard/server.py --scenario buildup --speed 10
+| `--scenario` | Source |
+|---|---|
+| `live_platform`, `live_corridor` | Replays pipeline output with the synced video panel (run step 2 first) |
+| `normal`, `buildup`, `bad_camera` | Mock scenarios from the contract, no video |
+
+Playback starts when the first browser connects. `live_*` scenarios run in
+real time and loop (`--no-loop` to play once); mock scenarios run at 10×.
+Use `--speed` to change the rate and `--port` if 8000 is busy. The `buildup`
+scenario is the best way to see Watch, Warning and Critical alerts.
+
+## Repository layout
+
+```text
+Station-Crowd-Safety-Agent/
+├── pipeline/
+│   ├── vision_pipeline.py        # video -> ZoneReading JSONL + annotated video
+│   └── profiles/                 # demo types: video + zone layout (JSON)
+├── agent/
+│   ├── risk_agent.py             # ZoneReading -> CrowdAlert (rule engine)
+│   ├── run_scenario.py           # scenario runner with PASS/FAIL checks
+│   └── alert.schema.json         # CrowdAlert schema
+├── dashboard/
+│   ├── server.py                 # FastAPI, SSE and video stream
+│   └── static/index.html         # operator UI
+├── crowd-agent-week2-start/
+│   ├── contract/                 # ZoneReading schema and rule table
+│   └── mock/                     # scenario generator and JSONL files
+├── requirements.txt
+└── .gitignore
 ```
 
-`--scenario` is one of `live_platform`, `live_corridor` (replay the
-pipeline output for that profile), `normal`, `buildup` or `bad_camera`. Then open http://127.0.0.1:8000. The `live_*` scenarios show the annotated
-video (zones overlaid, faces blurred) beside the zone cards, kept in sync
-with the readings; playback starts when the first browser connects and
-runs in real time by default (`--speed` to change) and loops until
-stopped (`--no-loop` to play once). Re-run the pipeline
-first so the readings and annotated video exist.
+## Project status
 
-If the video does not open, check the path, codec support, and that the
-file exists.
-
-## Team workstreams
-
-The project is divided into three workstreams:
-
-1.  **Vision pipeline:** video ingestion, person detection/tracking,
-    zone configuration, calibration, per-zone counts, density,
-    performance measurements.
-2.  **Crowd analytics and risk agent:** optical flow, turbulence
-    indicators, density trends, risk rules, reasons, recommendations,
-    and scenario evaluation.
-3.  **Dashboard and deployment:** backend/API, dashboard, alerts, event
-    history, human approval, documentation, and possible cloud
-    deployment.
-
-Until the real pipeline is available, the analytics and dashboard
-workstreams can use agreed sample JSON/mock data.
-
-## Safety, privacy, and limitations
-
--   This is a prototype and has not been validated for operational
-    railway safety use.
--   Person detectors may miss people in dense crowds, occlusion, poor
-    lighting, or distant views.
--   Pixel measurements are not physical density measurements unless
-    camera perspective and real-world floor dimensions are calibrated.
--   Risk thresholds and recommendations require testing; they should not
-    be treated as validated safety rules.
--   Human review must remain in the loop. The prototype must not
-    directly control real gates, trains, or other railway systems.
--   Avoid face recognition and unnecessary identification of
-    individuals.
--   Use only video and datasets whose licences permit your intended
-    testing, demonstration, and publication.
--   Blur faces in stored evidence where appropriate and permitted.
--   Do not commit API keys, passwords, private footage, or other
-    sensitive information.
-
-## Data and model files
-
-Test footage candidate: "Crowd on Railway Station in India" by Footage
-Democracy (https://youtu.be/r7-VchoIbG4), licensed Creative Commons
-Attribution (CC BY). Credit the creator if you publish results or media.
-
-Large videos and model weights are excluded from Git tracking by
-`.gitignore`. Team members should obtain permitted test media separately
-and document its source and licence. Do not upload third-party media or
-model files to the public repository unless redistribution is allowed.
-
-## Contributing
-
--   Create a feature branch for your assigned work.
--   Keep changes focused on your workstream.
--   Agree on shared JSON field names before changing the interface.
--   Test your module with sample/mock data.
--   Open a pull request for review before merging into `main`.
--   Do not commit credentials, private data, large generated outputs, or
-    unlicensed media.
-
-Suggested branches:
-
-``` text
-feature/vision-density
-feature/risk-agent
-feature/dashboard
-```
+| Area | State |
+|---|---|
+| YOLO detection, zone counts, density | Implemented (prototype) |
+| Optical-flow turbulence and speed | Implemented (camera motion compensated for handheld profiles) |
+| Risk rules, recommendations, alert schema | Implemented, passes the mock scenarios |
+| Dashboard with approval and synced video | Implemented |
+| Real camera and floor calibration | Not done (zone areas are estimates) |
+| Person tracking and smoothed counts | Not done |
+| `no_frame` / `camera_moved` detection from real video | Not done (only mock data exercises these paths) |
+| Evaluation against labelled data | Not done |
+| Alert persistence and cloud deployment | Not done |
 
 ## Evaluation plan
 
-Planned evaluation measures include:
+Planned measures, to be reported only once actually run:
 
--   Person-count error against labelled/ground-truth data where
-    available.
--   Whether the system gives warning before peak density in test videos.
--   False alarms and missed warnings on test scenarios.
--   Processing time / frames per second on documented hardware.
--   Failure cases caused by occlusion, poor lighting, dense crowds, or
-    camera movement.
+- Person-count error against ground truth.
+- Warning lead time before peak density in test videos.
+- False alarms and missed warnings on test scenarios.
+- Processing time and frames per second on documented hardware.
+- Failure cases: occlusion, poor lighting, dense crowds, camera movement.
 
-Results should be reported only after the tests have actually been run.
+## Limitations and safety notes
 
-## Contributors
+- Not validated for operational railway safety use.
+- Detectors miss people in dense crowds, under occlusion, in poor light and at
+  long range. Counts in very dense scenes will be too low.
+- Pixel measurements are not physical densities until perspective and
+  real-world floor dimensions are calibrated. The shipped zone areas and the
+  35 px/m speed factor are estimates.
+- The `corridor` profile uses handheld, eye-level footage, so its turbulence
+  values are noisy. It is a demonstration only.
+- Risk thresholds and recommendations need testing before any real use.
+- Human review must remain in the loop. The prototype must never directly
+  control real gates, trains or other railway systems.
+- **Privacy:** no face recognition or identification. Faces are blurred in
+  annotated video and evidence frames. Only use footage you are permitted to
+  use.
+- Do not commit credentials, private footage or other sensitive data.
 
--   **Member 1:** Vision pipeline lead
--   **Member 2:** Crowd analytics and risk agent
--   **Member 3:** Dashboard, alerts, and deployment
+## Data and licences
 
-## Licence
+Large media and model weights are excluded from Git (see `.gitignore`).
+Document the source and licence of any footage you use, and do not publish
+third-party media or weights unless redistribution is allowed.
 
-No licence is currently specified. Unless a licence is added, others do
-not automatically receive broad permission to reuse, modify, or
-redistribute the code. Third-party video, dataset, and model terms
-remain separate.
+**Corridor demo footage:** "Crowd on Railway Station in India" by Footage
+Democracy, <https://youtu.be/r7-VchoIbG4>, licensed Creative Commons
+Attribution (CC BY). Credit the creator if you publish results or media. One
+way to fetch the video-only stream used by the `corridor` profile:
+
+```cmd
+python -m pip install yt-dlp
+python -m yt_dlp -f 136 -o crowd_new.mp4 https://youtu.be/r7-VchoIbG4
+```
+
+**Code licence:** none is currently specified, so others have no automatic
+permission to reuse, modify or redistribute the code. Third-party video,
+dataset and model terms (including Ultralytics YOLO) are separate.
+
+## Contributing
+
+1. Create a feature branch for your work and keep changes focused.
+2. Agree on shared JSON field names before changing the contract.
+3. Test against the mock scenarios (`python agent/run_scenario.py`) before
+   opening a pull request into `main`.
+4. Do not commit credentials, private data, large outputs or unlicensed media.
+
+## Team
+
+| Workstream | Scope |
+|---|---|
+| Vision pipeline | Detection, zones, calibration, density, optical flow |
+| Risk agent | Rules, trends, recommendations, scenario evaluation |
+| Dashboard and deployment | API, UI, approvals, documentation, deployment |
