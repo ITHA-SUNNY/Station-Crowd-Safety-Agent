@@ -1,0 +1,8 @@
+# Vision pipeline (Workstream 1)
+opencv-python
+ultralytics
+
+# Risk agent + Dashboard (Workstream 2 & 3)
+fastapi
+uvicorn
+

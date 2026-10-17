@@ -6,11 +6,10 @@ is to turn video measurements into zone-level crowd information,
 identify potentially concerning movement patterns, and present
 recommendations for human review.
 
-> **Project status:** In development. Basic video playback and
-> YOLO-based person detection have been tested. Zone calibration,
-> validated density measurement, turbulence analysis, risk rules,
-> dashboard, and deployment should be treated as planned work until
-> implemented and tested.
+> **Project status:** Working prototype. The vision pipeline, risk agent
+> and dashboard run end to end on a recorded video and on mock scenarios.
+> Zone areas and the pixel-to-metre speed factor are **estimates, not a
+> real calibration**, and nothing has been validated against labelled data.
 
 ## Project goals
 
@@ -28,35 +27,46 @@ control railway infrastructure or replace trained safety personnel.
 
 ## Current status
 
-### Tested
+### Implemented (prototype)
 
--   Python/OpenCV environment setup.
--   Reading and playing a recorded video with OpenCV.
--   Basic person detection using Ultralytics YOLO.
+-   `pipeline/vision_pipeline.py`: YOLO person detection, hand-drawn zone
+    polygons, per-zone counts and density, Farneback optical-flow
+    turbulence and speed, quality flags, face-blurred evidence frames, and
+    `ZoneReading` JSONL output.
+-   `agent/risk_agent.py`: rule engine (Normal / Watch / Warning /
+    Critical / Can't trust) with density trend, hysteresis, and
+    recommendations by zone type. Alerts follow `agent/alert.schema.json`.
+-   `dashboard/`: FastAPI server with live stream, alert list, and
+    approve/dismiss actions.
+-   `crowd-agent-week2-start/`: the shared data contract and mock scenarios.
 
-### Planned / not yet confirmed complete
+### Not yet done
 
--   Zone polygons and camera/floor calibration.
--   Stable person tracking and smoothed zone counts.
--   Density calculation using calibrated physical area.
--   Optical-flow-based turbulence measurements.
--   Risk scoring, recommendations, and confidence checks.
--   Human approval interface, alert history, dashboard, and cloud
-    deployment.
+-   Real camera/floor calibration (zone `area_m2` values are estimates).
+-   Stable person tracking and smoothed counts.
+-   `no_frame` / `camera_moved` detection in the pipeline (only the mock
+    data exercises the Can't trust path for these).
 -   Quantitative evaluation against labelled data.
+-   Alert history persistence and cloud deployment.
 
 ## Repository
 
 ``` text
 Station-Crowd-Safety-Agent/
-├── main.py
+├── pipeline/
+│   ├── vision_pipeline.py           # video -> ZoneReading JSONL
+│   └── profiles/                    # demo types: video + zone layout
+├── agent/
+│   ├── risk_agent.py                # ZoneReading -> CrowdAlert
+│   ├── run_scenario.py              # runs agent on mock scenarios
+│   └── alert.schema.json
+├── dashboard/                       # FastAPI server + static UI
+├── crowd-agent-week2-start/
+│   ├── contract/                    # zone_reading schema + rules
+│   └── mock/                        # scenario generator and JSONL files
 ├── requirements.txt
-├── .gitignore
-└── README.md
+└── .gitignore
 ```
-
-The layout may expand as the vision, analytics, dashboard, and
-deployment modules are added.
 
 ## Requirements
 
@@ -66,8 +76,8 @@ deployment modules are added.
 -   Git.
 -   Internet access for initial package installation and model download.
 
-The current `requirements.txt` lists `opencv-python` and `ultralytics`.
-Ultralytics may install additional dependencies, including PyTorch.
+`requirements.txt` lists `opencv-python`, `ultralytics`, `fastapi` and
+`uvicorn`. Ultralytics may install additional dependencies, including PyTorch.
 Installation time and hardware requirements vary.
 
 ## Setup on Windows
@@ -106,26 +116,58 @@ python -c "from ultralytics import YOLO; YOLO('yolo11n.pt')"
 
 This requires internet access and may download model weights. Check the
 model's applicable terms before redistributing the weights. The model
-file is intentionally excluded from Git by `.gitignore`.
+file is excluded from Git by `.gitignore`.
 
 ## Running the prototype
 
-The exact command and options depend on the current contents of
-`main.py`. From the project directory, first inspect the file or follow
-the latest instructions added by the maintainers. If `main.py` is
-configured to read `crowd.webm`, place a suitable, locally available
-video at that path or update the video path in the code.
+Run everything from the repository root.
 
-Example command:
+**1. Vision pipeline.** Pick a demo type with `--profile`. Each profile
+bundles a video and a zone layout (`pipeline/profiles/*.json`):
+
+| Profile | Video | Camera | Zones |
+|---|---|---|---|
+| `platform` (default) | `crowd.mp4` | fixed | FOB stairs, two platform edges, two waiting areas |
+| `corridor` | `crowd_new.mp4` (see licence note below) | handheld | far / mid / near footbridge bands |
 
 ``` cmd
-python main.py
+python pipeline/vision_pipeline.py --profile platform
+python pipeline/vision_pipeline.py --profile corridor
 ```
 
-If the video does not open, check the video path, codec support, and
-whether the file exists. Press the key specified by the script to close
-the OpenCV window; the current key binding depends on the
-implementation.
+Output goes to `live_readings.jsonl` (platform) or
+`live_readings_<profile>.jsonl`. Use `--video` to override a profile's
+video. The `corridor` profile is a rough demo: the camera moves (camera
+motion is subtracted from the optical flow) and zone areas are guesses.
+To add a demo type, copy a profile JSON, edit the polygons, `zone_type`,
+`area_m2` and `video`, and pass its name to `--profile`.
+
+Other options: `--model`, `--out`, `--save-video`, `--no-blur`, `--show`
+(press `q` to close the preview).
+
+**2. Risk agent on the mock scenarios** (prints a PASS/FAIL summary):
+
+``` cmd
+python agent/run_scenario.py
+python agent/risk_agent.py live_readings.jsonl -v
+```
+
+**3. Dashboard:**
+
+``` cmd
+python dashboard/server.py --scenario buildup --speed 10
+```
+
+`--scenario` is one of `live_platform`, `live_corridor` (replay the
+pipeline output for that profile), `normal`, `buildup` or `bad_camera`. Then open http://127.0.0.1:8000. The `live_*` scenarios show the annotated
+video (zones overlaid, faces blurred) beside the zone cards, kept in sync
+with the readings; playback starts when the first browser connects and
+runs in real time by default (`--speed` to change) and loops until
+stopped (`--no-loop` to play once). Re-run the pipeline
+first so the readings and annotated video exist.
+
+If the video does not open, check the path, codec support, and that the
+file exists.
 
 ## Team workstreams
 
@@ -165,6 +207,10 @@ workstreams can use agreed sample JSON/mock data.
     sensitive information.
 
 ## Data and model files
+
+Test footage candidate: "Crowd on Railway Station in India" by Footage
+Democracy (https://youtu.be/r7-VchoIbG4), licensed Creative Commons
+Attribution (CC BY). Credit the creator if you publish results or media.
 
 Large videos and model weights are excluded from Git tracking by
 `.gitignore`. Team members should obtain permitted test media separately
