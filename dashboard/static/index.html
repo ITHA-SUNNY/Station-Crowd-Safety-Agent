@@ -198,6 +198,27 @@
       color: #94a3b8;
       line-height: 1.45;
     }
+    .ac-llm {
+      font-size: 0.72rem;
+      color: #e0f2fe;
+      background: #082f49;
+      border: 1px solid #0284c7;
+      border-left: 3px solid #38bdf8;
+      border-radius: 4px;
+      padding: 0.45rem 0.6rem;
+      line-height: 1.45;
+    }
+    .ac-llm-tag {
+      font-size: 0.62rem;
+      font-weight: 700;
+      color: #38bdf8;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 0.25rem;
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
     .ac-rec {
       font-size: 0.72rem;
       color: #bae6fd;
@@ -442,7 +463,19 @@ function addApprovalCard(alert) {
       Density: <strong>${alert.density_ppm2.toFixed(2)} p/m²</strong>
       &nbsp;|&nbsp; Trend: ${alert.density_trend_per_min >= 0 ? '+' : ''}${alert.density_trend_per_min.toFixed(2)}/min
     </div>
+    <div style="display:flex; gap:0.4rem; font-size:0.62rem; margin-top:2px; flex-wrap:wrap;">
+      ${alert.s3_evidence_uri ? `<span style="background:#1e3a5f; color:#93c5fd; padding:1px 6px; border-radius:4px; font-family:monospace;" title="${alert.s3_evidence_uri}">☁️ AWS S3 Archived</span>` : ''}
+      ${alert.sns_broadcast ? `<span style="background:#581c87; color:#e9d5ff; padding:1px 6px; border-radius:4px;" title="Emergency broadcast dispatched via Amazon SNS">🚨 AWS SNS Dispatched</span>` : ''}
+    </div>
     <div class="ac-reason">${alert.reason}</div>
+    ${alert.llm_summary ? `
+      <div class="ac-llm">
+        <div class="ac-llm-tag">
+          <span style="display:inline-block; width:6px; height:6px; background:#38bdf8; border-radius:50%;"></span>
+          AI Situation Brief (${alert.llm_source || 'Gemini 3.8 Flash'})
+        </div>
+        ${alert.llm_summary}
+      </div>` : ''}
     <div class="ac-rec">${alert.recommendation}</div>
     ${alert.evidence_frame ? `<div class="ac-evidence" style="margin-top:6px;"><img src="/${alert.evidence_frame}" style="width:100%; border-radius:6px; border:1px solid #334155; max-height:160px; object-fit:cover;" alt="Evidence Frame (Faces Blurred)" /></div>` : ''}
     ${hasCriticalTimer ? `<div class="ac-escalate visible" id="esc-${alert.alert_id}">Escalates in ${alert.escalate_after_s}s if not approved</div>` : ''}

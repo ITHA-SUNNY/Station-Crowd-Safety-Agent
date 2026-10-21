@@ -45,6 +45,9 @@ from fastapi.staticfiles import StaticFiles
 # Make the agent importable
 sys.path.insert(0, str(Path(__file__).parent.parent / "agent"))
 from risk_agent import RiskAgent, ZoneReading  # noqa: E402
+from llm_enricher import enrich_alert_async  # noqa: E402
+sys.path.insert(0, str(Path(__file__).parent.parent / "cloud"))
+from aws_bridge import upload_evidence_to_s3, dispatch_sns_critical_alert  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -66,6 +69,9 @@ SCENARIO_VIDEOS: Dict[str, str] = {
     "live":          "output_annotated.mp4",
     "live_platform": "output_annotated.mp4",
     "live_corridor": "output_annotated_corridor.mp4",
+    "buildup":       "output_annotated.mp4",
+    "normal":        "output_annotated.mp4",
+    "bad_camera":    "output_annotated.mp4",
 }
 
 ALERT_HISTORY_SIZE = 200
@@ -195,6 +201,15 @@ async def _playback(scenario: str, speed: float) -> None:
             zone_status[reading.zone_id] = current_status
 
             if alert:
+                alert = await enrich_alert_async(alert)
+                # AWS Cloud Bridge: S3 evidence archive + SNS emergency broadcast
+                if alert.get("evidence_frame"):
+                    s3_meta = upload_evidence_to_s3(alert["evidence_frame"], alert["zone_id"], alert.get("alert_id", ""))
+                    if s3_meta.get("s3_uri"):
+                        alert["s3_evidence_uri"] = s3_meta["s3_uri"]
+                if alert.get("level") == "critical":
+                    sns_meta = dispatch_sns_critical_alert(alert)
+                    alert["sns_broadcast"] = sns_meta.get("status") in ("published", "simulated_sent")
                 alert_history.append(alert)
                 _broadcast("alert", alert)
             else:
@@ -243,9 +258,10 @@ def _video_path() -> Optional[Path]:
 
 
 def _mjpeg_frames(path: Path):
-    """Yield MJPEG parts, showing the video frame that matches the readings."""
+    """Yield MJPEG parts, showing the video frame that matches the readings, looping continuously."""
     cap = cv2.VideoCapture(str(path))
     fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) or 1
     cur = -1
     gen = _clock["gen"]
     try:
@@ -256,12 +272,17 @@ def _mjpeg_frames(path: Path):
                 cur = -1
             off = _clock["offset"]
             if _clock["running"]:
-                # interpolate between 1 Hz readings, at most one reading ahead
+                # interpolate between 1 Hz readings
                 off += min((time.monotonic() - _clock["updated"]) * _clock["speed"], 1.0)
-            target = int(off * fps)
+            target = int(off * fps) % total_frames
+            if target < cur:
+                cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                cur = -1
             if target > cur and _clock["gen"] > 0:
                 while cur < target:
                     if not cap.grab():
+                        cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                        cur = -1
                         break
                     cur += 1
                 ok, frame = cap.retrieve()

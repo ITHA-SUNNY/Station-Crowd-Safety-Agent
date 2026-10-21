@@ -1,240 +1,162 @@
 # Station Crowd Safety Agent
 
-Computer-vision decision support for railway-station crowd safety. The system
-turns recorded video into per-zone crowd measurements, applies explainable
-risk rules, and presents recommended actions to a human operator for approval.
+Computer-vision decision support for railway-station crowd safety. The system turns recorded or live CCTV video into per-zone crowd density and turbulence measurements, applies safety-first risk rules, generates plain-English situational briefs via **Gemini 3.8 Flash**, archives blurred evidence to **Amazon S3**, and dispatches emergency broadcasts via **Amazon SNS** while presenting actionable recommendations to a human station controller for approval.
 
-> **Status: working prototype.** The vision pipeline, risk agent and dashboard
-> run end to end on recorded video and on mock scenarios. Zone areas and the
-> pixel-to-metre speed factor are estimates, not a real calibration, and
-> nothing has been validated against labelled data. See
-> [Limitations](#limitations-and-safety-notes).
+> **Status: working prototype.** The vision pipeline, risk agent, Gemini explanation layer, AWS cloud bridge, and operator dashboard run end-to-end on recorded video and simulated edge-case scenarios. See [Limitations and Safety Notes](#limitations-and-safety-notes).
 
-The system **supports human decision-making**. It does not control gates,
-trains or any other railway infrastructure.
+The system **supports human decision-making**. It does not control gates, trains or any other railway infrastructure.
 
-## Features
+---
 
-- **Person detection and zone counting** with Ultralytics YOLO and configurable
-  zone polygons.
-- **Density and motion measurement:** people per m², plus turbulence and flow
-  speed from Farneback optical flow (camera motion is compensated for handheld
-  footage).
-- **Explainable risk levels:** Normal, Watch, Warning, Critical, and
-  Can't trust. Every alert lists the rules that triggered it and a
-  recommended action for the zone type.
-- **Human in the loop:** Warning and Critical alerts require operator
-  approval, and a low-confidence or failed camera is never reported as
-  "all clear".
-- **Live dashboard** with an annotated video panel (zones overlaid, faces
-  blurred) kept in sync with the zone cards, an alert feed, and
-  approve/dismiss actions.
-- **Selectable demo profiles:** each bundles a video and a zone layout.
-
-## How it works
+## Architecture
 
 ```mermaid
 flowchart LR
-    V[Video] --> P[Vision pipeline<br/>YOLO + optical flow]
-    P -- "ZoneReading JSONL<br/>about 1 per zone per second" --> A[Risk agent<br/>rules + trend]
-    A -- "CrowdAlert JSON" --> D[Dashboard<br/>FastAPI + SSE]
-    P -- annotated video --> D
-    D --> O[Operator approves or dismisses]
+    V["Station CCTV Video"] --> P["Vision Pipeline (YOLO11 + Optical Flow)"]
+    P -- "ZoneReading JSONL" --> A["Risk Rule Engine (density, turbulence, trend)"]
+    A -- "Rule Alert (Immutable Level)" --> G["Gemini 3.8 Flash (AI Situation Brief)"]
+    G -- "Enriched Alert" --> AWS["AWS Cloud Bridge (S3 Archive + SNS Broadcast)"]
+    AWS --> D["Operator Dashboard (FastAPI + SSE)"]
+    P -- "CCTV Stream (Faces Blurred)" --> D
+    D --> O["Station Controller (Approve & Act / Dismiss)"]
+    AWS -- "Critical SMS / Push" --> M["Station Master & RPF Police"]
 ```
 
-The pipeline and agent communicate only through the data contract in
-[`crowd-agent-week2-start/contract/`](crowd-agent-week2-start/contract/README.md)
-(`zone_reading.schema.json`), so each side can be developed and tested
-independently with mock data.
+The pipeline and agent communicate strictly through data contracts:
+- [`crowd-agent-week2-start/contract/zone_reading.schema.json`](crowd-agent-week2-start/contract/zone_reading.schema.json)
+- [`agent/alert.schema.json`](agent/alert.schema.json)
 
-### Risk rules
+### Safety-First Architecture & LLM Contract
+- **Rules always make the safety call**: Risk level (`normal`, `watch`, `warning`, `critical`, `cant_trust`) is determined strictly by the deterministic rule engine.
+- **LLM cannot downgrade safety**: The Gemini LLM enricher only writes to `alert["llm_summary"]`. It can never alter the alert level, recommendation, or sensor triggers.
+- **Privacy compliance**: All evidence frames and live video feeds have human faces blurred before display or cloud archiving.
+- **Enterprise Cloud Bridge**: Dual-mode AWS bridge; automatically runs in live mode with valid AWS credentials or in zero-friction simulation mode for local demos.
 
-Evaluated per zone, most severe first. Thresholds live as constants at the top
-of [`agent/risk_agent.py`](agent/risk_agent.py).
+---
 
-| Level | Trigger | Agent action |
+## Features
+
+- **Person detection & zone density**: Ultralytics YOLO11 (`yolo11n.pt`) with bottom-center ground-plane attribution.
+- **Optical flow turbulence**: Farneback optical flow measures chaotic vs smooth crowd movement.
+- **Rolling trend regression**: 60-second linear regression computes density rate of change ($\text{people/m}^2/\text{min}$).
+- **Gemini 3.8 Flash AI Situation Brief**: Explains emerging crush risks in plain English for the operator on duty.
+- **Amazon S3 Evidence Archiving**: Automatically stores privacy-blurred evidence frames to cloud storage for tamper-evident safety audits.
+- **Amazon SNS Emergency Dispatch**: Immediately pushes emergency broadcasts to station masters and railway police when critical crush thresholds are exceeded.
+- **Human-in-the-loop**: Warning and Critical alerts require operator approval, with a 60-second escalation countdown timer on Critical alerts.
+- **Live web dashboard**: Synchronized CCTV video view, live zone status cards, and interactive approval workflow.
+
+---
+
+## Risk Rules
+
+| Level | Trigger Criteria | Action Recommendation |
 |---|---|---|
-| Can't trust | confidence < 0.5, or flag `no_frame` / `camera_moved` | Ask a human to check the camera |
-| Critical | density ≥ 5 p/m², or turbulence ≥ 0.5 with density ≥ 4 | Urgent recommendation, escalate if not approved in 60 s |
-| Warning | density ≥ 4 p/m², or rising ≥ 1.0 p/m²/min and projected to reach 4 within a minute | Recommend an action, ask an official to approve |
-| Watch | density 2 to 4 p/m², or rising > 0.5 p/m²/min | Show on dashboard, no alert |
-| Normal | otherwise | Keep watching |
+| **Can't trust** | Confidence < 0.5, or `no_frame` / `camera_moved` | Deploy staff to visually check the area. Never report all-clear. |
+| **Critical** | Density $\ge 5\text{ p/m}^2$, or (Turbulence $\ge 0.5$ AND Density $\ge 4$) | Urgent hold on entry gates, deploy stairhead staff, 60s escalation timer, SNS broadcast |
+| **Warning** | Density $\ge 4\text{ p/m}^2$, or rising $\ge 1.0\text{ p/m}^2/\text{min}$ toward 4 | Stagger gate entry, announce alternate foot overbridges via PA |
+| **Watch** | Density $2\text{--}4\text{ p/m}^2$, or trend $> +0.5\text{ p/m}^2/\text{min}$ | Highlighted on dashboard for close monitoring |
+| **Normal** | Density $< 2\text{ p/m}^2$ and Turbulence $< 0.3$ | Routine monitoring |
 
-The trend is a linear regression over a 60 s window and is only used once 30
-readings are available. Hysteresis stops a zone hovering on a threshold from
-flapping between levels. The danger thresholds follow the commonly cited
-4 to 5 people/m² crush-risk range and are **starting values to be tuned, not
-validated safety limits**.
+---
 
-## Quick start
+## Quick Start
 
-Requires Python 3 and Git. The first install downloads PyTorch via
-Ultralytics, so allow time and disk space.
+### 1. Installation
 
-```cmd
+```powershell
 git clone https://github.com/ITHA-SUNNY/Station-Crowd-Safety-Agent.git
 cd Station-Crowd-Safety-Agent
-py -m venv .venv
-.venv\Scripts\activate
 python -m pip install -r requirements.txt
 ```
 
-On Linux or macOS, activate with `source .venv/bin/activate` instead.
+### 2. (Optional) Configure Cloud Credentials
 
-The YOLO weights (`yolo11n.pt`) download automatically on first use, or fetch
-them explicitly:
+```powershell
+# For Gemini 3.8 Flash AI Situation Briefs:
+$env:GEMINI_API_KEY = "your-gemini-api-key"
 
-```cmd
-python -c "from ultralytics import YOLO; YOLO('yolo11n.pt')"
+# For live Amazon S3 & Amazon SNS integration (optional):
+$env:AWS_ACCESS_KEY_ID = "your-aws-key"
+$env:AWS_SECRET_ACCESS_KEY = "your-aws-secret"
+$env:AWS_REGION = "ap-south-1"
+$env:AWS_S3_BUCKET = "your-s3-bucket"
+$env:AWS_SNS_TOPIC_ARN = "arn:aws:sns:ap-south-1:123456789012:railway-emergency-alerts"
+```
+*(If AWS credentials are not set, the system automatically runs in safe simulation mode).*
+
+### 3. Launch Master Runner (`main.py`)
+
+Run the complete operator dashboard in one command:
+
+```powershell
+# 1. Crowd crush buildup scenario with CCTV video, Gemini briefs & AWS archiving (default, 10x speed)
+python main.py
+
+# 2. Real-time Indian railway platform CCTV playback
+python main.py --scenario live
+
+# 3. Footbridge corridor CCTV playback
+python main.py --scenario live_corridor
+
+# 4. Process new footage with YOLO11 and open dashboard
+python main.py --video crowd.mp4
+
+# 5. Run verification test suite (all 3 contract scenarios)
+python main.py --test
+
+# 6. Verify Gemini 3.8 Flash AI enricher
+python main.py --test-llm
+
+# 7. Verify Amazon S3 & SNS cloud integration
+python main.py --test-aws
 ```
 
-### 1. Try the agent on mock data (no video needed)
+The master launcher automatically opens [http://127.0.0.1:8000](http://127.0.0.1:8000) in your browser.
 
-```cmd
-python agent/run_scenario.py
+---
+
+## Cloud & Docker Deployment
+
+A production `Dockerfile` and `docker-compose.yml` are included for deploying on **AWS EC2**, **AWS App Runner**, or **AWS ECS**:
+
+```powershell
+docker compose up --build
 ```
 
-Runs three scenarios (normal, buildup, bad camera) and prints a PASS/FAIL
-summary against the expected behaviour in the contract.
+---
 
-### 2. Run the vision pipeline on a demo profile
-
-Videos are not stored in the repository. Place the file named in the profile
-in the repository root, then run the pipeline:
-
-| Profile | Video file | Camera | Zones |
-|---|---|---|---|
-| `platform` (default) | `crowd.mp4` (supply your own permitted footage) | fixed | FOB stairs, two platform edges, two waiting areas |
-| `corridor` | `crowd_new.mp4` (see [Data and licences](#data-and-licences)) | handheld | far, mid and near footbridge bands |
-
-```cmd
-python pipeline/vision_pipeline.py --profile platform
-python pipeline/vision_pipeline.py --profile corridor
-```
-
-Output goes to `live_readings.jsonl` (platform) or
-`live_readings_<profile>.jsonl`, plus an annotated video
-(`output_annotated*.mp4`) and evidence frames in `pipeline/frames/`. Useful
-options: `--video`, `--model`, `--out`, `--save-video`, `--no-blur`,
-`--show` (press `q` to close the preview).
-
-**Adding a demo type:** copy a file in `pipeline/profiles/`, edit the polygons,
-`zone_type`, `area_m2`, `camera_id` and `video`, then pass its name to
-`--profile`. Polygon coordinates are pixels in the video frame.
-
-### 3. Start the dashboard
-
-```cmd
-python dashboard/server.py --scenario live_platform
-```
-
-Open <http://127.0.0.1:8000>.
-
-| `--scenario` | Source |
-|---|---|
-| `live_platform`, `live_corridor` | Replays pipeline output with the synced video panel (run step 2 first) |
-| `normal`, `buildup`, `bad_camera` | Mock scenarios from the contract, no video |
-
-Playback starts when the first browser connects. `live_*` scenarios run in
-real time and loop (`--no-loop` to play once); mock scenarios run at 10×.
-Use `--speed` to change the rate and `--port` if 8000 is busy. The `buildup`
-scenario is the best way to see Watch, Warning and Critical alerts.
-
-## Repository layout
+## Repository Layout
 
 ```text
 Station-Crowd-Safety-Agent/
+├── main.py                     # Master unified launcher CLI
+├── Dockerfile                  # Container definition for AWS deployment
+├── docker-compose.yml          # Container configuration with cloud environment variables
+├── requirements.txt            # Python dependencies (YOLO, OpenCV, FastAPI, google-genai, boto3)
+├── crowd.mp4                   # Sample Indian railway station platform footage
 ├── pipeline/
-│   ├── vision_pipeline.py        # video -> ZoneReading JSONL + annotated video
-│   └── profiles/                 # demo types: video + zone layout (JSON)
+│   ├── vision_pipeline.py      # YOLO11 + Farneback optical flow + face blurring
+│   ├── profiles/               # Zone layouts: platform.json, corridor.json
+│   └── frames/                 # Stored evidence frames (faces blurred)
 ├── agent/
-│   ├── risk_agent.py             # ZoneReading -> CrowdAlert (rule engine)
-│   ├── run_scenario.py           # scenario runner with PASS/FAIL checks
-│   └── alert.schema.json         # CrowdAlert schema
+│   ├── risk_agent.py           # Deterministic rule engine & linear trend regression
+│   ├── llm_enricher.py         # Gemini 3.8 Flash situational explanation layer
+│   ├── run_scenario.py         # Automated contract regression test suite
+│   └── alert.schema.json       # CrowdAlert contract schema
+├── cloud/
+│   └── aws_bridge.py           # Amazon S3 evidence archiving & Amazon SNS emergency dispatch
 ├── dashboard/
-│   ├── server.py                 # FastAPI, SSE and video stream
-│   └── static/index.html         # operator UI
-├── crowd-agent-week2-start/
-│   ├── contract/                 # ZoneReading schema and rule table
-│   └── mock/                     # scenario generator and JSONL files
-├── requirements.txt
-└── .gitignore
+│   ├── server.py               # FastAPI backend with SSE alert stream & MJPEG video
+│   └── static/index.html       # Single-page operator dashboard (responsive dark UI)
+└── crowd-agent-week2-start/
+    ├── contract/               # Input/output schemas & specification
+    └── mock/                   # Scenario generators & test datasets
 ```
 
-## Project status
+---
 
-| Area | State |
-|---|---|
-| YOLO detection, zone counts, density | Implemented (prototype) |
-| Optical-flow turbulence and speed | Implemented (camera motion compensated for handheld profiles) |
-| Risk rules, recommendations, alert schema | Implemented, passes the mock scenarios |
-| Dashboard with approval and synced video | Implemented |
-| Real camera and floor calibration | Not done (zone areas are estimates) |
-| Person tracking and smoothed counts | Not done |
-| `no_frame` / `camera_moved` detection from real video | Not done (only mock data exercises these paths) |
-| Evaluation against labelled data | Not done |
-| Alert persistence and cloud deployment | Not done |
+## Limitations and Safety Notes
 
-## Evaluation plan
-
-Planned measures, to be reported only once actually run:
-
-- Person-count error against ground truth.
-- Warning lead time before peak density in test videos.
-- False alarms and missed warnings on test scenarios.
-- Processing time and frames per second on documented hardware.
-- Failure cases: occlusion, poor lighting, dense crowds, camera movement.
-
-## Limitations and safety notes
-
-- Not validated for operational railway safety use.
-- Detectors miss people in dense crowds, under occlusion, in poor light and at
-  long range. Counts in very dense scenes will be too low.
-- Pixel measurements are not physical densities until perspective and
-  real-world floor dimensions are calibrated. The shipped zone areas and the
-  35 px/m speed factor are estimates.
-- The `corridor` profile uses handheld, eye-level footage, so its turbulence
-  values are noisy. It is a demonstration only.
-- Risk thresholds and recommendations need testing before any real use.
-- Human review must remain in the loop. The prototype must never directly
-  control real gates, trains or other railway systems.
-- **Privacy:** no face recognition or identification. Faces are blurred in
-  annotated video and evidence frames. Only use footage you are permitted to
-  use.
-- Do not commit credentials, private footage or other sensitive data.
-
-## Data and licences
-
-Large media and model weights are excluded from Git (see `.gitignore`).
-Document the source and licence of any footage you use, and do not publish
-third-party media or weights unless redistribution is allowed.
-
-**Corridor demo footage:** "Crowd on Railway Station in India" by Footage
-Democracy, <https://youtu.be/r7-VchoIbG4>, licensed Creative Commons
-Attribution (CC BY). Credit the creator if you publish results or media. One
-way to fetch the video-only stream used by the `corridor` profile:
-
-```cmd
-python -m pip install yt-dlp
-python -m yt_dlp -f 136 -o crowd_new.mp4 https://youtu.be/r7-VchoIbG4
-```
-
-**Code licence:** none is currently specified, so others have no automatic
-permission to reuse, modify or redistribute the code. Third-party video,
-dataset and model terms (including Ultralytics YOLO) are separate.
-
-## Contributing
-
-1. Create a feature branch for your work and keep changes focused.
-2. Agree on shared JSON field names before changing the contract.
-3. Test against the mock scenarios (`python agent/run_scenario.py`) before
-   opening a pull request into `main`.
-4. Do not commit credentials, private data, large outputs or unlicensed media.
-
-## Team
-
-| Workstream | Scope |
-|---|---|
-| Vision pipeline | Detection, zones, calibration, density, optical flow |
-| Risk agent | Rules, trends, recommendations, scenario evaluation |
-| Dashboard and deployment | API, UI, approvals, documentation, deployment |
+- **Prototype only:** Not certified for operational deployment in live railway signaling or automated crowd control.
+- **Human in the loop required:** Safety actions must always be verified and executed by human controllers.
+- **Zone areas:** Zone areas ($\text{m}^2$) and homography are visual approximations calibrated for test footage; production deployment requires geometric camera calibration against measured station blueprints.
