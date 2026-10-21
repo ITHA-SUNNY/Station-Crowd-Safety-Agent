@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "alert.schema.json",
+  "title": "CrowdAlert",
+  "description": "One alert record emitted by the risk agent for one zone. The dashboard consumes this; the vision pipeline never sees it.",
+  "type": "object",
+  "required": [
+    "alert_id", "ts", "camera_id", "zone_id", "zone_type",
+    "level", "density_ppm2", "turbulence", "density_trend_per_min",
+    "triggered_by", "reason", "recommendation",
+    "confidence", "quality_flags", "requires_approval"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "alert_id":              { "type": "string",  "description": "UUID v4 — unique per emitted alert" },
+    "ts":                    { "type": "string",  "format": "date-time", "description": "UTC time of the reading that triggered this alert" },
+    "camera_id":             { "type": "string",  "description": "e.g. CAM-FOB2" },
+    "zone_id":               { "type": "string",  "description": "e.g. FOB2-STAIRS-DOWN" },
+    "zone_type":             { "enum": ["gate", "stairs", "platform_edge", "concourse", "fob"] },
+    "level": {
+      "enum": ["normal", "watch", "warning", "critical", "cant_trust"],
+      "description": "Risk level assigned by the rule engine. The LLM can never downgrade this."
+    },
+    "density_ppm2":          { "type": "number",  "minimum": 0, "description": "Instantaneous density from the zone reading" },
+    "turbulence":            { "type": "number",  "minimum": 0, "maximum": 1 },
+    "density_trend_per_min": { "type": "number",  "description": "Linear density change per minute over the last 60 s window. Negative = crowd thinning." },
+    "triggered_by": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "density_watch",
+          "density_warning",
+          "density_critical",
+          "trend_rising_watch",
+          "trend_rising_warning",
+          "turbulence_critical",
+          "low_confidence",
+          "no_frame",
+          "camera_moved"
+        ]
+      },
+      "description": "Which rule(s) fired. At least one entry."
+    },
+    "reason":            { "type": "string", "description": "Plain-English explanation written by the rule engine or LLM, stating facts only." },
+    "recommendation":    { "type": "string", "description": "Suggested operator action. Zone-type-specific." },
+    "confidence":        { "type": "number", "minimum": 0, "maximum": 1 },
+    "quality_flags":     { "type": "array",  "items": { "enum": ["low_light","occluded","camera_moved","blur","too_dense_to_count","no_frame"] } },
+    "evidence_frame":    { "type": "string", "description": "Optional. Path/key of the annotated frame, faces blurred." },
+    "requires_approval": { "type": "boolean", "description": "True when level is warning or critical — operator must act." },
+    "escalate_after_s":  { "type": "integer", "minimum": 0, "description": "Seconds before the system re-escalates if not approved. Only present when requires_approval is true." }
+  }
+}
+

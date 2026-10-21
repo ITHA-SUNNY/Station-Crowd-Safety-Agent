@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "zone_reading.schema.json",
+  "title": "ZoneReading",
+  "description": "One measurement for one zone of one camera, produced by the vision pipeline about once per second. The agent reads only this; it never looks at pixels directly.",
+  "type": "object",
+  "required": ["ts", "camera_id", "zone_id", "zone_type", "area_m2", "people_count", "density_ppm2", "turbulence", "flow_speed_mps", "confidence", "quality_flags"],
+  "additionalProperties": false,
+  "properties": {
+    "ts": { "type": "string", "format": "date-time", "description": "UTC time of the frame, ISO 8601, e.g. 2026-10-12T09:30:01Z" },
+    "camera_id": { "type": "string", "description": "e.g. CAM-FOB2" },
+    "zone_id": { "type": "string", "description": "Unique within the camera, e.g. FOB2-STAIRS-DOWN" },
+    "zone_type": { "enum": ["gate", "stairs", "platform_edge", "concourse", "fob"], "description": "Used by the agent to pick the right action" },
+    "area_m2": { "type": "number", "exclusiveMinimum": 0, "description": "Real floor area of the zone after calibration" },
+    "people_count": { "type": "integer", "minimum": 0 },
+    "density_ppm2": { "type": "number", "minimum": 0, "description": "people_count / area_m2" },
+    "turbulence": { "type": "number", "minimum": 0, "maximum": 1, "description": "0 = everyone moving smoothly the same way, 1 = chaotic pushing in all directions" },
+    "flow_speed_mps": { "type": "number", "minimum": 0, "description": "Median walking speed in the zone, metres per second" },
+    "confidence": { "type": "number", "minimum": 0, "maximum": 1, "description": "How much the pipeline trusts this reading" },
+    "quality_flags": {
+      "type": "array",
+      "items": { "enum": ["low_light", "occluded", "camera_moved", "blur", "too_dense_to_count", "no_frame"] },
+      "description": "Why confidence is low. Empty list when everything is fine"
+    },
+    "evidence_frame": { "type": "string", "description": "Optional. Path or S3 key of the annotated frame, faces blurred" }
+  }
+}

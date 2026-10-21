@@ -1,0 +1,156 @@
+{
+  "name": "platform",
+  "description": "Platform view with FOB stairs and two platform edges (fixed camera)",
+  "video": "crowd.mp4",
+  "camera_static": true,
+  "zones": {
+    "FOB-STAIRS": {
+      "polygon": [
+        [
+          0,
+          100
+        ],
+        [
+          240,
+          130
+        ],
+        [
+          230,
+          420
+        ],
+        [
+          0,
+          420
+        ]
+      ],
+      "zone_type": "stairs",
+      "area_m2": 24.0,
+      "camera_id": "CAM-FOB1",
+      "color": [
+        255,
+        150,
+        0
+      ]
+    },
+    "PF2-EDGE": {
+      "polygon": [
+        [
+          520,
+          10
+        ],
+        [
+          580,
+          10
+        ],
+        [
+          480,
+          300
+        ],
+        [
+          430,
+          720
+        ],
+        [
+          320,
+          720
+        ],
+        [
+          410,
+          300
+        ]
+      ],
+      "zone_type": "platform_edge",
+      "area_m2": 35.0,
+      "camera_id": "CAM-PF2",
+      "color": [
+        0,
+        0,
+        255
+      ]
+    },
+    "PF2-WAITING": {
+      "polygon": [
+        [
+          320,
+          300
+        ],
+        [
+          410,
+          300
+        ],
+        [
+          320,
+          720
+        ],
+        [
+          160,
+          720
+        ]
+      ],
+      "zone_type": "concourse",
+      "area_m2": 40.0,
+      "camera_id": "CAM-PF2",
+      "color": [
+        0,
+        255,
+        0
+      ]
+    },
+    "PF1-EDGE": {
+      "polygon": [
+        [
+          850,
+          10
+        ],
+        [
+          900,
+          10
+        ],
+        [
+          1110,
+          720
+        ],
+        [
+          1040,
+          720
+        ]
+      ],
+      "zone_type": "platform_edge",
+      "area_m2": 30.0,
+      "camera_id": "CAM-PF1",
+      "color": [
+        255,
+        0,
+        255
+      ]
+    },
+    "PF1-WAITING": {
+      "polygon": [
+        [
+          900,
+          10
+        ],
+        [
+          960,
+          10
+        ],
+        [
+          1280,
+          720
+        ],
+        [
+          1110,
+          720
+        ]
+      ],
+      "zone_type": "concourse",
+      "area_m2": 50.0,
+      "camera_id": "CAM-PF1",
+      "color": [
+        0,
+        255,
+        255
+      ]
+    }
+  }
+}

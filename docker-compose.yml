@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  safety-agent:
+    build: .
+    container_name: station-crowd-safety-agent
+    ports:
+      - "8000:8000"
+    environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
+      - AWS_REGION=${AWS_REGION:-ap-south-1}
+      - AWS_S3_BUCKET=${AWS_S3_BUCKET:-station-crowd-safety-evidence}
+      - AWS_SNS_TOPIC_ARN=${AWS_SNS_TOPIC_ARN:-}
+    restart: unless-stopped
+

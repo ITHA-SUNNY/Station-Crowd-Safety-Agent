@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Model weights and media (obtain separately; check licences before sharing)
+*.pt
+*.mp4
+*.webm
+*.jpg
+*.jpeg
+!dashboard/static/**
+
+# Generated pipeline output
+live_readings*.jsonl
+pipeline/frames/

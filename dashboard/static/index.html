@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Station Crowd Safety — Operator Dashboard</title>
+  <style>
+    /* ── Reset & base ───────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { font-size: 15px; }
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Header ─────────────────────────────────────────────────── */
+    header {
+      background: #1e293b;
+      border-bottom: 1px solid #334155;
+      padding: 0.75rem 1.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+    header h1 { font-size: 1.1rem; font-weight: 700; letter-spacing: 0.02em; }
+    header h1 span { color: #38bdf8; }
+
+    #conn-badge {
+      font-size: 0.75rem;
+      padding: 0.25rem 0.65rem;
+      border-radius: 999px;
+      font-weight: 600;
+      background: #374151;
+      color: #9ca3af;
+      transition: background 0.3s, color 0.3s;
+    }
+    #conn-badge.live  { background: #14532d; color: #86efac; }
+    #conn-badge.error { background: #7f1d1d; color: #fca5a5; }
+
+    #scenario-label {
+      font-size: 0.75rem;
+      color: #94a3b8;
+    }
+
+    /* ── Layout ─────────────────────────────────────────────────── */
+    main {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1fr 400px;
+      grid-template-rows: auto auto 1fr;
+      gap: 1rem;
+      padding: 1rem 1.5rem;
+      min-height: 0;
+    }
+
+    /* ── Zone grid ───────────────────────────────────────────────── */
+    #video-panel {
+      grid-column: 1;
+      grid-row: 1;
+      display: none;
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 10px;
+      padding: 0.5rem;
+    }
+    #video-panel.on { display: block; }
+    #video-panel h2 { font-size: 0.8rem; color: #94a3b8; margin: 0 0 0.4rem 0.25rem; font-weight: 600; }
+    #video-panel img { width: 100%; max-height: 42vh; object-fit: contain; border-radius: 6px; background: #000; display: block; }
+
+    #zone-grid {
+      grid-column: 1;
+      grid-row: 2;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 0.75rem;
+    }
+
+    .zone-card {
+      background: #1e293b;
+      border: 2px solid #334155;
+      border-radius: 10px;
+      padding: 0.9rem 1rem;
+      transition: border-color 0.4s, background 0.4s;
+      min-height: 120px;
+      display: flex;
+      flex-direction: column;
+      gap: 0.3rem;
+    }
+    .zone-card .zone-id   { font-size: 0.7rem; color: #64748b; letter-spacing: 0.05em; font-family: monospace; }
+    .zone-card .zone-name { font-size: 0.9rem; font-weight: 700; }
+    .zone-card .zone-type { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em; color: #94a3b8; }
+    .zone-card .zone-density { font-size: 1.5rem; font-weight: 800; line-height: 1; margin-top: 0.25rem; }
+    .zone-card .zone-density span { font-size: 0.65rem; font-weight: 400; color: #94a3b8; }
+    .zone-card .zone-meta { font-size: 0.7rem; color: #94a3b8; display: flex; gap: 0.75rem; margin-top: 0.15rem; }
+    .zone-card .zone-level { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; margin-top: auto; padding-top: 0.4rem; }
+    .zone-card .zone-ts { font-size: 0.65rem; color: #475569; }
+
+    /* level colours (border + level label) */
+    .zone-card.normal    { border-color: #16a34a; }
+    .zone-card.normal    .zone-level { color: #22c55e; }
+    .zone-card.watch     { border-color: #ca8a04; background: #1c1a0c; }
+    .zone-card.watch     .zone-level { color: #eab308; }
+    .zone-card.warning   { border-color: #ea580c; background: #1c0f08; }
+    .zone-card.warning   .zone-level { color: #f97316; }
+    .zone-card.critical  { border-color: #dc2626; background: #1c0808; animation: pulse-red 1.5s ease-in-out infinite; }
+    .zone-card.critical  .zone-level { color: #ef4444; }
+    .zone-card.cant_trust{ border-color: #4b5563; background: #111827; }
+    .zone-card.cant_trust .zone-level { color: #9ca3af; }
+
+    @keyframes pulse-red {
+      0%,100% { background: #1c0808; }
+      50%      { background: #2d0e0e; }
+    }
+
+    /* ── Alert feed (active approvals) ──────────────────────────── */
+    #approval-panel {
+      grid-column: 2;
+      grid-row: 1 / 4;
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 10px;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      overflow: hidden;
+    }
+    #approval-panel h2 {
+      padding: 0.75rem 1rem;
+      font-size: 0.85rem;
+      font-weight: 700;
+      border-bottom: 1px solid #334155;
+      letter-spacing: 0.04em;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    #approval-count {
+      font-size: 0.7rem;
+      background: #dc2626;
+      color: #fff;
+      border-radius: 999px;
+      padding: 0.15rem 0.5rem;
+      font-weight: 700;
+      display: none;
+    }
+    #approval-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 0.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+    #approval-list::-webkit-scrollbar { width: 5px; }
+    #approval-list::-webkit-scrollbar-track { background: transparent; }
+    #approval-list::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+
+    .approval-card {
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      padding: 0.75rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.45rem;
+      position: relative;
+    }
+    .approval-card.warning  { border-left: 3px solid #f97316; }
+    .approval-card.critical { border-left: 3px solid #ef4444; }
+    .approval-card.cant_trust{ border-left: 3px solid #6b7280; }
+
+    .ac-header { display: flex; align-items: center; gap: 0.4rem; }
+    .ac-level {
+      font-size: 0.65rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      padding: 0.15rem 0.45rem;
+      border-radius: 4px;
+    }
+    .ac-level.warning   { background: #7c2d12; color: #fb923c; }
+    .ac-level.critical  { background: #7f1d1d; color: #f87171; }
+    .ac-level.cant_trust{ background: #1f2937; color: #9ca3af; }
+
+    .ac-zone  { font-size: 0.75rem; font-weight: 700; font-family: monospace; flex: 1; }
+    .ac-ts    { font-size: 0.65rem; color: #475569; }
+
+    .ac-density { font-size: 0.8rem; color: #e2e8f0; }
+    .ac-density strong { color: #f8fafc; }
+
+    .ac-reason {
+      font-size: 0.72rem;
+      color: #94a3b8;
+      line-height: 1.45;
+    }
+    .ac-llm {
+      font-size: 0.72rem;
+      color: #e0f2fe;
+      background: #082f49;
+      border: 1px solid #0284c7;
+      border-left: 3px solid #38bdf8;
+      border-radius: 4px;
+      padding: 0.45rem 0.6rem;
+      line-height: 1.45;
+    }
+    .ac-llm-tag {
+      font-size: 0.62rem;
+      font-weight: 700;
+      color: #38bdf8;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 0.25rem;
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
+    .ac-rec {
+      font-size: 0.72rem;
+      color: #bae6fd;
+      background: #0c2233;
+      border-radius: 4px;
+      padding: 0.4rem 0.5rem;
+      line-height: 1.45;
+    }
+
+    .ac-escalate {
+      font-size: 0.7rem;
+      color: #fbbf24;
+      font-weight: 700;
+      display: none;
+    }
+    .ac-escalate.visible { display: block; }
+
+    .ac-actions { display: flex; gap: 0.5rem; margin-top: 0.25rem; }
+    .btn {
+      border: none;
+      border-radius: 6px;
+      padding: 0.35rem 0.8rem;
+      font-size: 0.72rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    .btn:hover { opacity: 0.85; }
+    .btn-approve { background: #15803d; color: #fff; }
+    .btn-dismiss { background: #374151; color: #d1d5db; }
+
+    .approval-card.resolved {
+      opacity: 0.4;
+      pointer-events: none;
+    }
+    .resolved-label {
+      position: absolute;
+      top: 0.5rem;
+      right: 0.5rem;
+      font-size: 0.65rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      color: #6b7280;
+    }
+
+    /* ── Alert history feed ──────────────────────────────────────── */
+    #feed-panel {
+      grid-column: 1;
+      grid-row: 3;
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 10px;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      max-height: 340px;
+    }
+    #feed-panel h2 {
+      padding: 0.65rem 1rem;
+      font-size: 0.85rem;
+      font-weight: 700;
+      border-bottom: 1px solid #334155;
+      letter-spacing: 0.04em;
+    }
+    #feed-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 0.5rem 0.75rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.2rem;
+      font-size: 0.72rem;
+      font-family: monospace;
+    }
+    #feed-list::-webkit-scrollbar { width: 5px; }
+    #feed-list::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+
+    .feed-row {
+      display: flex;
+      gap: 0.6rem;
+      padding: 0.15rem 0;
+      border-bottom: 1px solid #1e293b;
+    }
+    .feed-row .ft   { color: #475569; width: 60px; flex-shrink: 0; }
+    .feed-row .fz   { color: #94a3b8; width: 180px; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .feed-row .fl   { width: 80px; flex-shrink: 0; font-weight: 700; }
+    .feed-row .fd   { color: #64748b; }
+
+    .fl.normal    { color: #22c55e; }
+    .fl.watch     { color: #eab308; }
+    .fl.warning   { color: #f97316; }
+    .fl.critical  { color: #ef4444; }
+    .fl.cant_trust{ color: #9ca3af; }
+
+    /* ── Empty states ────────────────────────────────────────────── */
+    .empty { color: #475569; font-size: 0.8rem; padding: 1rem; text-align: center; }
+
+    /* ── Scrollbar global ────────────────────────────────────────── */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #0f172a; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+  </style>
+</head>
+<body>
+
+<!-- ── Header ─────────────────────────────────────────────────────── -->
+<header>
+  <div style="display:flex;align-items:center;gap:1rem">
+    <h1>Station Crowd <span>Safety</span> — Operator Dashboard</h1>
+    <span id="scenario-label"></span>
+  </div>
+  <span id="conn-badge">Connecting…</span>
+</header>
+
+<!-- ── Main grid ──────────────────────────────────────────────────── -->
+<main>
+
+  <!-- Annotated video, kept in sync with the readings -->
+  <div id="video-panel">
+    <h2>Live camera view (zones overlaid, faces blurred)</h2>
+    <img id="video-img" alt="Annotated video stream" />
+  </div>
+
+  <!-- Zone status cards -->
+  <div id="zone-grid">
+    <div class="empty" id="zone-empty">Waiting for first readings…</div>
+  </div>
+
+  <!-- Approval / action panel (right column) -->
+  <div id="approval-panel">
+    <h2>
+      Active Alerts
+      <span id="approval-count">0</span>
+    </h2>
+    <div id="approval-list">
+      <div class="empty" id="approval-empty">No alerts requiring action.</div>
+    </div>
+  </div>
+
+  <!-- Alert history feed (bottom left) -->
+  <div id="feed-panel">
+    <h2>Alert Feed</h2>
+    <div id="feed-list">
+      <div class="empty" id="feed-empty">No alerts yet.</div>
+    </div>
+  </div>
+
+</main>
+
+<script>
+/* ================================================================
+   State
+   ================================================================ */
+const zones = {};          // zone_id -> latest alert dict
+const approvalCards = {};  // alert_id -> { card, timer }
+let approvalCount = 0;
+
+/* ================================================================
+   Utility
+   ================================================================ */
+function fmtTime(isoStr) {
+  try { return isoStr.slice(11, 19); } catch { return isoStr; }
+}
+
+function levelLabel(level) {
+  return { normal: 'Normal', watch: 'Watch', warning: 'Warning',
+           critical: 'CRITICAL', cant_trust: "Can't Trust" }[level] || level;
+}
+
+/* ================================================================
+   Zone cards
+   ================================================================ */
+function upsertZoneCard(alert) {
+  const zid = alert.zone_id;
+  zones[zid] = alert;
+
+  const grid = document.getElementById('zone-grid');
+  const empty = document.getElementById('zone-empty');
+  if (empty) empty.remove();
+
+  let card = document.getElementById('zc-' + zid);
+  if (!card) {
+    card = document.createElement('div');
+    card.id = 'zc-' + zid;
+    card.className = 'zone-card';
+    card.innerHTML = `
+      <div class="zone-id"></div>
+      <div class="zone-name"></div>
+      <div class="zone-type"></div>
+      <div class="zone-density"><span>p/m²</span></div>
+      <div class="zone-meta">
+        <span class="zm-turb"></span>
+        <span class="zm-trend"></span>
+        <span class="zm-conf"></span>
+      </div>
+      <div class="zone-level"></div>
+      <div class="zone-ts"></div>
+    `;
+    grid.appendChild(card);
+  }
+
+  card.className = 'zone-card ' + alert.level;
+  card.querySelector('.zone-id').textContent = zid;
+  card.querySelector('.zone-name').textContent = zid.replace(/-/g,' ');
+  card.querySelector('.zone-type').textContent = alert.zone_type;
+
+  const dens = card.querySelector('.zone-density');
+  dens.innerHTML = `${alert.density_ppm2.toFixed(2)}<span> p/m²</span>`;
+
+  card.querySelector('.zm-turb').textContent  = 'Turb ' + alert.turbulence.toFixed(2);
+  const trend = alert.density_trend_per_min;
+  card.querySelector('.zm-trend').textContent = 'Trend ' + (trend >= 0 ? '+' : '') + trend.toFixed(2);
+  card.querySelector('.zm-conf').textContent  = 'Conf ' + (alert.confidence * 100).toFixed(0) + '%';
+  card.querySelector('.zone-level').textContent = levelLabel(alert.level);
+  card.querySelector('.zone-ts').textContent  = fmtTime(alert.ts);
+}
+
+/* ================================================================
+   Approval panel
+   ================================================================ */
+function addApprovalCard(alert) {
+  if (!['warning','critical','cant_trust'].includes(alert.level)) return;
+  if (approvalCards[alert.alert_id]) return; // deduplicate
+
+  const list   = document.getElementById('approval-list');
+  const empty  = document.getElementById('approval-empty');
+  if (empty) empty.remove();
+
+  const card = document.createElement('div');
+  card.className = 'approval-card ' + alert.level;
+  card.id = 'ac-' + alert.alert_id;
+
+  const hasCriticalTimer = alert.level === 'critical' && alert.escalate_after_s;
+
+  card.innerHTML = `
+    <div class="ac-header">
+      <span class="ac-level ${alert.level}">${levelLabel(alert.level)}</span>
+      <span class="ac-zone">${alert.zone_id}</span>
+      <span class="ac-ts">${fmtTime(alert.ts)}</span>
+    </div>
+    <div class="ac-density">
+      Density: <strong>${alert.density_ppm2.toFixed(2)} p/m²</strong>
+      &nbsp;|&nbsp; Trend: ${alert.density_trend_per_min >= 0 ? '+' : ''}${alert.density_trend_per_min.toFixed(2)}/min
+    </div>
+    <div style="display:flex; gap:0.4rem; font-size:0.62rem; margin-top:2px; flex-wrap:wrap;">
+      ${alert.s3_evidence_uri ? `<span style="background:#1e3a5f; color:#93c5fd; padding:1px 6px; border-radius:4px; font-family:monospace;" title="${alert.s3_evidence_uri}">☁️ AWS S3 Archived</span>` : ''}
+      ${alert.sns_broadcast ? `<span style="background:#581c87; color:#e9d5ff; padding:1px 6px; border-radius:4px;" title="Emergency broadcast dispatched via Amazon SNS">🚨 AWS SNS Dispatched</span>` : ''}
+    </div>
+    <div class="ac-reason">${alert.reason}</div>
+    ${alert.llm_summary ? `
+      <div class="ac-llm">
+        <div class="ac-llm-tag">
+          <span style="display:inline-block; width:6px; height:6px; background:#38bdf8; border-radius:50%;"></span>
+          AI Situation Brief (${alert.llm_source || 'Gemini 3.8 Flash'})
+        </div>
+        ${alert.llm_summary}
+      </div>` : ''}
+    <div class="ac-rec">${alert.recommendation}</div>
+    ${alert.evidence_frame ? `<div class="ac-evidence" style="margin-top:6px;"><img src="/${alert.evidence_frame}" style="width:100%; border-radius:6px; border:1px solid #334155; max-height:160px; object-fit:cover;" alt="Evidence Frame (Faces Blurred)" /></div>` : ''}
+    ${hasCriticalTimer ? `<div class="ac-escalate visible" id="esc-${alert.alert_id}">Escalates in ${alert.escalate_after_s}s if not approved</div>` : ''}
+    <div class="ac-actions">
+      <button class="btn btn-approve" onclick="doApprove('${alert.alert_id}')">Approve &amp; Act</button>
+      <button class="btn btn-dismiss" onclick="doDismiss('${alert.alert_id}')">Dismiss</button>
+    </div>
+    <span class="resolved-label" style="display:none"></span>
+  `;
+
+  list.prepend(card);
+  updateApprovalCount(+1);
+
+  // Escalation countdown for Critical
+  let remaining = alert.escalate_after_s || 0;
+  let timerId = null;
+  if (hasCriticalTimer) {
+    timerId = setInterval(() => {
+      remaining--;
+      const el = document.getElementById('esc-' + alert.alert_id);
+      if (el) {
+        if (remaining <= 0) {
+          el.textContent = 'ESCALATED — awaiting human response';
+          el.style.color = '#ef4444';
+          clearInterval(timerId);
+        } else {
+          el.textContent = `Escalates in ${remaining}s if not approved`;
+        }
+      } else {
+        clearInterval(timerId);
+      }
+    }, 1000);
+  }
+
+  approvalCards[alert.alert_id] = { card, timerId };
+}
+
+function doApprove(alertId) {
+  fetch(`/api/approve/${alertId}`, { method: 'POST' }).catch(console.error);
+  resolveCard(alertId, 'APPROVED');
+}
+
+function doDismiss(alertId) {
+  fetch(`/api/dismiss/${alertId}`, { method: 'POST' }).catch(console.error);
+  resolveCard(alertId, 'DISMISSED');
+}
+
+function resolveCard(alertId, label) {
+  const entry = approvalCards[alertId];
+  if (!entry) return;
+  if (entry.timerId) clearInterval(entry.timerId);
+  const { card } = entry;
+  card.classList.add('resolved');
+  const lbl = card.querySelector('.resolved-label');
+  lbl.textContent = label;
+  lbl.style.display = 'block';
+  updateApprovalCount(-1);
+  // Remove after 3 s
+  setTimeout(() => card.remove(), 3000);
+}
+
+function updateApprovalCount(delta) {
+  approvalCount += delta;
+  const badge = document.getElementById('approval-count');
+  badge.textContent = approvalCount;
+  badge.style.display = approvalCount > 0 ? 'inline' : 'none';
+}
+
+/* ================================================================
+   Alert feed (history log)
+   ================================================================ */
+function addFeedRow(alert) {
+  const list  = document.getElementById('feed-list');
+  const empty = document.getElementById('feed-empty');
+  if (empty) empty.remove();
+
+  const row = document.createElement('div');
+  row.className = 'feed-row';
+  row.innerHTML = `
+    <span class="ft">${fmtTime(alert.ts)}</span>
+    <span class="fz">${alert.zone_id}</span>
+    <span class="fl ${alert.level}">${levelLabel(alert.level)}</span>
+    <span class="fd">${alert.density_ppm2.toFixed(2)} p/m²</span>
+  `;
+  list.prepend(row);
+
+  // Keep at most 100 rows
+  while (list.children.length > 100) list.removeChild(list.lastChild);
+}
+
+/* ================================================================
+   SSE connection
+   ================================================================ */
+function connect() {
+  const badge = document.getElementById('conn-badge');
+  badge.textContent = 'Connecting…';
+  badge.className = '';
+
+  const es = new EventSource('/api/stream');
+
+  es.addEventListener('connected', e => {
+    badge.textContent = 'Live';
+    badge.className = 'live';
+    const d = JSON.parse(e.data);
+    document.getElementById('scenario-label').textContent =
+      d.scenario ? 'Scenario: ' + d.scenario : '';
+    if (d.has_video) {
+      document.getElementById('video-panel').classList.add('on');
+      const img = document.getElementById('video-img');
+      if (!img.getAttribute('src')) img.src = '/api/video';
+    }
+  });
+
+  es.addEventListener('snapshot', e => {
+    const d = JSON.parse(e.data);
+    (d.zones || []).forEach(upsertZoneCard);
+  });
+
+  es.addEventListener('alert', e => {
+    const alert = JSON.parse(e.data);
+    upsertZoneCard(alert);
+    addFeedRow(alert);
+    if (alert.requires_approval) addApprovalCard(alert);
+  });
+
+  es.addEventListener('zone_update', e => {
+    const status = JSON.parse(e.data);
+    upsertZoneCard(status);
+  });
+
+  es.addEventListener('approved', e => {
+    const d = JSON.parse(e.data);
+    resolveCard(d.alert_id, 'APPROVED');
+  });
+
+  es.addEventListener('dismissed', e => {
+    const d = JSON.parse(e.data);
+    resolveCard(d.alert_id, 'DISMISSED');
+  });
+
+  es.addEventListener('playback_restart', () => location.reload());
+
+  es.addEventListener('playback_complete', e => {
+    badge.textContent = 'Playback complete';
+    badge.className = '';
+  });
+
+  es.onerror = () => {
+    badge.textContent = 'Reconnecting…';
+    badge.className = 'error';
+    es.close();
+    setTimeout(connect, 3000);
+  };
+}
+
+// Fetch current state on load (in case we're reconnecting)
+async function loadSnapshot() {
+  try {
+    const r = await fetch('/api/zones');
+    const d = await r.json();
+    (d.zones || []).forEach(upsertZoneCard);
+  } catch {}
+}
+
+loadSnapshot();
+connect();
+</script>
+</body>
+</html>
+
