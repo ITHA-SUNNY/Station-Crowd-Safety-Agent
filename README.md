@@ -99,8 +99,8 @@ Never commit credentials. `.env` files are git-ignored.
 ### 3. Run the dashboard
 
 ```powershell
-python main.py                          # buildup: simulated crush build-up, shows Watch, Warning, Critical (10x speed)
-python main.py --scenario live          # platform CCTV demo, real time, loops
+python main.py                          # platform CCTV demo with video, real time, loops (default)
+python main.py --scenario buildup       # simulated crush build-up: Watch, Warning, Critical alerts (10x, no video)
 python main.py --scenario live_corridor # footbridge corridor demo, real time, loops
 python main.py --video my_clip.mp4      # run the vision pipeline on your own video, then open the dashboard
 python main.py --video my_clip.mp4 --profile corridor
@@ -141,7 +141,7 @@ A `Dockerfile` and `docker-compose.yml` are included for running the dashboard i
 docker compose up --build
 ```
 
-Credentials are passed from your environment (see `docker-compose.yml`). The container starts the default `buildup` scenario on port 8000.
+Credentials are passed from your environment (see `docker-compose.yml`). The container starts the default `live` (platform video) scenario on port 8000.
 
 ---
 

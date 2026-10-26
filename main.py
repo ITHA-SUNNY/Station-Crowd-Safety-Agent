@@ -10,11 +10,11 @@ Provides a single master command to launch any part of the system:
 
 Usage Examples
 --------------
-1. Launch operator dashboard with simulated crowd crush buildup (10x speed):
+1. Launch operator dashboard with real Indian railway CCTV platform footage (default):
     python main.py
 
-2. Launch operator dashboard with real Indian railway CCTV platform footage:
-    python main.py --scenario live
+2. Launch operator dashboard with the simulated crowd crush buildup (shows alerts, 10x speed):
+    python main.py --scenario buildup
 
 3. Process a new video with YOLO11 + optical flow, then open dashboard:
     python main.py --video crowd.mp4
@@ -164,14 +164,14 @@ def main():
     parser.add_argument(
         "--scenario",
         choices=["buildup", "live", "live_platform", "live_corridor", "normal", "bad_camera"],
-        default="buildup",
-        help="Scenario to stream on the dashboard (default: buildup)",
+        default="live",
+        help="Scenario to stream on the dashboard (default: live)",
     )
     parser.add_argument(
         "--speed",
         type=float,
         default=None,
-        help="Playback speed multiplier (default: 1.0 for live, 10.0 for buildup/mock)",
+        help="Playback speed multiplier (default: 1.0 for live, 10.0 for simulated scenarios)",
     )
     parser.add_argument(
         "--video",
