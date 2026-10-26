@@ -65,15 +65,10 @@ SCENARIO_FILES: Dict[str, str] = {
 }
 
 # Annotated videos produced by the vision pipeline (faces already blurred)
-LIVE_SCENARIOS = {"live", "live_platform", "live_corridor"}   # readings come from the video
-
 SCENARIO_VIDEOS: Dict[str, str] = {
     "live":          "output_annotated.mp4",
     "live_platform": "output_annotated.mp4",
     "live_corridor": "output_annotated_corridor.mp4",
-    "buildup":       "output_annotated.mp4",
-    "normal":        "output_annotated.mp4",
-    "bad_camera":    "output_annotated.mp4",
 }
 
 # Critical alerts are re-emitted every cycle; broadcast to SNS at most once per
@@ -371,9 +366,7 @@ async def sse_stream() -> StreamingResponse:
         # Send a hello event so the client knows it's connected
         yield _sse("connected", {"message": "Connected to alert stream.",
                                  "scenario": _args.scenario,
-                                 "has_video": _video_path() is not None,
-                                 # mock scenarios show looping footage as a backdrop only
-                                 "video_is_backdrop": _args.scenario not in LIVE_SCENARIOS})
+                                 "has_video": _video_path() is not None})
         # Send current zone snapshot immediately
         if zone_status:
             yield _sse("snapshot", {"zones": list(zone_status.values())})

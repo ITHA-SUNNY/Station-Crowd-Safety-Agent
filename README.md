@@ -108,7 +108,7 @@ python main.py --video my_clip.mp4 --profile corridor
 
 The dashboard opens at <http://127.0.0.1:8000> (`--port` to change, `--no-browser` to skip opening it). Playback starts when the first browser connects.
 
-- `buildup`, `normal` and `bad_camera` use simulated readings. The video panel shows looping platform footage as a labelled backdrop only; it is not where those readings come from. `buildup` is the one that raises alerts.
+- `buildup`, `normal` and `bad_camera` use scripted, simulated readings and have no video panel. `buildup` is the one that raises alerts. They play once.
 - `live` and `live_corridor` replay readings measured from the bundled demo footage, with the annotated video kept in sync. The footage is low-density, so zones stay Normal.
 - If a live scenario's data files are missing, `main.py` regenerates them from the profile's source video (a couple of minutes), or tells you what to supply.
 

@@ -583,9 +583,6 @@ function connect() {
     document.getElementById('scenario-label').textContent =
       d.scenario ? 'Scenario: ' + d.scenario : '';
     if (d.has_video) {
-      document.querySelector('#video-panel h2').textContent = d.video_is_backdrop
-        ? 'Demo backdrop: looping footage (readings in this scenario are simulated, not from this video)'
-        : 'Live camera view (zones overlaid, faces blurred)';
       document.getElementById('video-panel').classList.add('on');
       const img = document.getElementById('video-img');
       if (!img.getAttribute('src')) img.src = '/api/video';
