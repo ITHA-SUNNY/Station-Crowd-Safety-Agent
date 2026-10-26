@@ -1,5 +1,5 @@
 # ==============================================================================
-# Station Crowd Safety Agent — Production Dockerfile for AWS Deployment
+# Station Crowd Safety Agent — Dockerfile for AWS deployment
 # Compatible with AWS ECS, AWS App Runner, and AWS EC2 (t3.medium or g4dn.xlarge)
 # ==============================================================================
 
@@ -7,7 +7,7 @@ FROM python:3.11-slim
 
 # Install system dependencies for OpenCV and video handling
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libgl1-mesa-glx \
+    libgl1 \
     libglib2.0-0 \
     ffmpeg \
     curl \

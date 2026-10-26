@@ -28,6 +28,9 @@ from typing import Dict, List, Optional, Tuple
 import cv2
 import numpy as np
 
+if int(cv2.__version__.split(".")[0]) < 5:
+    print(f"[Vision] WARNING: OpenCV {cv2.__version__} found; this project targets OpenCV 5.", file=sys.stderr)
+
 # ---------------------------------------------------------------------------
 # Demo profiles (video + zone layout), see pipeline/profiles/*.json
 # ---------------------------------------------------------------------------

@@ -1,25 +1,28 @@
 """
 cloud/aws_bridge.py
 ===================
-AWS Enterprise Cloud Bridge for Station Crowd Safety Agent
+AWS bridge for the Station Crowd Safety Agent.
 
-Integrates with three core AWS services for production transit operations:
-1. Amazon S3 (Evidence & Audit Archive):
-   - Offloads privacy-blurred evidence frames and JSONL telemetry to cloud storage.
-   - Preserves tamper-evident incident history for safety and compliance audits.
-2. Amazon SNS (Emergency Escalation Broadcast):
-   - Dispatches instant SMS / Push notifications to Duty Station Masters and
-     Railway Police when a Critical alert is triggered or unapproved after 60s.
-3. Amazon Bedrock (Enterprise Alternative LLM):
-   - Supports AWS-hosted Foundation Models (Claude 3.5 Sonnet / Amazon Nova)
-     as an alternative enterprise backend for situational briefs.
+Two AWS services are used:
+1. Amazon S3 (evidence archive):
+   - Uploads the annotated evidence frame attached to a Warning/Critical alert
+     (faces are blurred best-effort by the vision pipeline before saving).
+   - Each frame is uploaded once. No object-lock or integrity checks are
+     configured by this code.
+2. Amazon SNS (critical broadcast):
+   - Publishes a message to an SNS topic when a Critical alert is raised.
+     Who receives it depends on who is subscribed to the topic.
+   - The dashboard limits this to one broadcast per zone per 5 minutes. It is
+     sent when the Critical alert is raised, not after an approval timeout.
 
-Dual-Mode Operation:
-- Live AWS Mode: Uses boto3 to call real AWS services when AWS credentials
-  (AWS_ACCESS_KEY_ID / IAM role) and bucket/topic environment variables are set.
-- Safe Simulation Mode: Runs automatically when AWS credentials are absent,
-  simulating S3 object keys and logging SNS dispatches so the system functions
-  completely seamlessly in offline demos and testing environments.
+Dual-mode operation:
+- Live mode: boto3 calls real AWS when credentials are found in the
+  environment (AWS_ACCESS_KEY_ID, AWS_PROFILE, or ECS/App Runner container
+  credentials) and the bucket / topic settings are provided. A plain EC2
+  instance role is not detected by this check.
+- Simulation mode: used otherwise. Nothing is sent to AWS; the bridge builds
+  the same objects and logs what it would have done, so demos and tests run
+  without an AWS account.
 """
 
 from __future__ import annotations
@@ -128,7 +131,7 @@ def upload_evidence_to_s3(
 def dispatch_sns_critical_alert(alert: dict) -> Dict[str, str]:
     """
     Publish an emergency alert notification to Amazon SNS.
-    Targeted at Station Master, RPF, and safety personnel.
+    Reaches whoever is subscribed to the SNS topic (for example station staff).
     """
     level = alert.get("level", "WARNING").upper()
     zone_id = alert.get("zone_id", "STATION_ZONE")

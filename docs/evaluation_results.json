@@ -1,0 +1,62 @@
+{
+  "date": "2026-10-26T21:26:53",
+  "hardware": {
+    "os": "Windows-11-10.0.26200-SP0",
+    "cpu": "Intel64 Family 6 Model 186 Stepping 2, GenuineIntel",
+    "cpu_threads": 12,
+    "python": "3.14.7",
+    "opencv": "5.0.0",
+    "torch": "2.14.1+cpu",
+    "cuda": false,
+    "ultralytics": "8.4.180"
+  },
+  "scenarios": {
+    "normal": {
+      "readings": 2400,
+      "alerts_emitted": 0,
+      "first_alert_seconds_from_start": {}
+    },
+    "buildup": {
+      "readings": 3600,
+      "alerts_emitted": 442,
+      "first_alert_seconds_from_start": {
+        "FOB2-STAIRS-DOWN": {
+          "watch": 226.0,
+          "warning": 465.0,
+          "critical": 589.0
+        },
+        "GATE1-ENTRY": {
+          "watch": 359.0,
+          "normal": 370.0
+        },
+        "FOB2-DECK": {
+          "watch": 360.0,
+          "normal": 364.0
+        }
+      }
+    },
+    "bad_camera": {
+      "readings": 2400,
+      "alerts_emitted": 360,
+      "first_alert_seconds_from_start": {
+        "PF3-EDGE": {
+          "cant_trust": 240.0
+        }
+      }
+    }
+  },
+  "throughput": {
+    "platform": {
+      "frames": 622,
+      "seconds": 307.1,
+      "fps": 2.03,
+      "zone_readings": 65
+    },
+    "corridor": {
+      "frames": 736,
+      "seconds": 367.2,
+      "fps": 2.0,
+      "zone_readings": 75
+    }
+  }
+}
