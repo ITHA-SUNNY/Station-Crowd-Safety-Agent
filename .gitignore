@@ -3,14 +3,26 @@ __pycache__/
 *.pyc
 .venv/
 
-# Model weights and media (obtain separately; check licences before sharing)
+# Secrets
+.env
+.env.*
+
+# Model weights are downloaded automatically by Ultralytics
 *.pt
+
+# Media and generated output are ignored by default...
 *.mp4
 *.webm
 *.jpg
 *.jpeg
-!dashboard/static/**
-
-# Generated pipeline output
 live_readings*.jsonl
 pipeline/frames/
+
+# ...except the CC-licensed demo footage and its generated demo data
+!crowd.mp4
+!crowd_new.mp4
+!output_annotated.mp4
+!output_annotated_corridor.mp4
+!live_readings.jsonl
+!live_readings_corridor.jsonl
+!dashboard/static/**

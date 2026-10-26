@@ -65,6 +65,8 @@ SCENARIO_FILES: Dict[str, str] = {
 }
 
 # Annotated videos produced by the vision pipeline (faces already blurred)
+LIVE_SCENARIOS = {"live", "live_platform", "live_corridor"}   # readings come from the video
+
 SCENARIO_VIDEOS: Dict[str, str] = {
     "live":          "output_annotated.mp4",
     "live_platform": "output_annotated.mp4",
@@ -74,6 +76,10 @@ SCENARIO_VIDEOS: Dict[str, str] = {
     "bad_camera":    "output_annotated.mp4",
 }
 
+# Critical alerts are re-emitted every cycle; broadcast to SNS at most once per
+# zone per cooldown, and upload each evidence frame to S3 only once.
+SNS_COOLDOWN_S = 300
+
 ALERT_HISTORY_SIZE = 200
 
 # ---------------------------------------------------------------------------
@@ -82,6 +88,8 @@ ALERT_HISTORY_SIZE = 200
 
 alert_history: deque[dict] = deque(maxlen=ALERT_HISTORY_SIZE)
 zone_status: Dict[str, dict] = {}       # zone_id -> most-recent alert dict
+_sns_last_sent: Dict[str, float] = {}   # zone_id -> time.monotonic() of last broadcast
+_s3_uploaded: Dict[str, str] = {}       # evidence_frame -> s3 uri
 approved_ids: set[str] = set()
 dismissed_ids: set[str] = set()
 
@@ -114,18 +122,19 @@ def _broadcast(event_type: str, payload: dict) -> None:
 async def _playback_loop(scenario: str, speed: float) -> None:
     """Replay the scenario forever when it has a video (a demo that keeps running)."""
     while True:
-        await _playback(scenario, speed)
-        if scenario not in SCENARIO_VIDEOS or not _args.loop:
+        completed = await _playback(scenario, speed)
+        if not completed or scenario not in SCENARIO_VIDEOS or not _args.loop:
             return
         await asyncio.sleep(3)
         alert_history.clear()
         zone_status.clear()
         approved_ids.clear()
         dismissed_ids.clear()
+        _sns_last_sent.clear()
         _broadcast("playback_restart", {"scenario": scenario})
 
 
-async def _playback(scenario: str, speed: float) -> None:
+async def _playback(scenario: str, speed: float) -> bool:
     """
     Reads the scenario JSONL line-by-line, passes each reading through the
     risk agent, and broadcasts any alert via SSE.
@@ -137,9 +146,13 @@ async def _playback(scenario: str, speed: float) -> None:
     path = REPO_ROOT / SCENARIO_FILES[scenario]
     if not path.exists():
         print(f"[server] Scenario file not found: {path}", file=sys.stderr)
-        print("[server] Run: python crowd-agent-week2-start/mock/generate_mock.py",
-              file=sys.stderr)
-        return
+        if scenario in SCENARIO_VIDEOS:
+            print("[server] Generate it first: python main.py --video <video> "
+                  "[--profile platform|corridor]", file=sys.stderr)
+        else:
+            print("[server] Run: python crowd-agent-week2-start/mock/generate_mock.py",
+                  file=sys.stderr)
+        return False
 
     # Wait for the first browser so the operator sees the run from the start
     if _start_event is not None:
@@ -203,13 +216,21 @@ async def _playback(scenario: str, speed: float) -> None:
             if alert:
                 alert = await enrich_alert_async(alert)
                 # AWS Cloud Bridge: S3 evidence archive + SNS emergency broadcast
-                if alert.get("evidence_frame"):
-                    s3_meta = upload_evidence_to_s3(alert["evidence_frame"], alert["zone_id"], alert.get("alert_id", ""))
-                    if s3_meta.get("s3_uri"):
-                        alert["s3_evidence_uri"] = s3_meta["s3_uri"]
+                frame = alert.get("evidence_frame")
+                if frame:
+                    if frame not in _s3_uploaded:
+                        s3_meta = upload_evidence_to_s3(frame, alert["zone_id"], alert.get("alert_id", ""))
+                        _s3_uploaded[frame] = s3_meta.get("s3_uri", "")
+                    if _s3_uploaded[frame]:
+                        alert["s3_evidence_uri"] = _s3_uploaded[frame]
                 if alert.get("level") == "critical":
-                    sns_meta = dispatch_sns_critical_alert(alert)
-                    alert["sns_broadcast"] = sns_meta.get("status") in ("published", "simulated_sent")
+                    now = time.monotonic()
+                    last = _sns_last_sent.get(alert["zone_id"])
+                    if last is None or now - last >= SNS_COOLDOWN_S:
+                        sns_meta = dispatch_sns_critical_alert(alert)
+                        alert["sns_broadcast"] = sns_meta.get("status") in ("published", "simulated_sent")
+                        if alert["sns_broadcast"]:
+                            _sns_last_sent[alert["zone_id"]] = now
                 alert_history.append(alert)
                 _broadcast("alert", alert)
             else:
@@ -219,6 +240,7 @@ async def _playback(scenario: str, speed: float) -> None:
     # Signal playback complete
     _broadcast("playback_complete", {"scenario": scenario})
     print(f"[server] Playback complete: {scenario}", file=sys.stderr)
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -349,7 +371,9 @@ async def sse_stream() -> StreamingResponse:
         # Send a hello event so the client knows it's connected
         yield _sse("connected", {"message": "Connected to alert stream.",
                                  "scenario": _args.scenario,
-                                 "has_video": _video_path() is not None})
+                                 "has_video": _video_path() is not None,
+                                 # mock scenarios show looping footage as a backdrop only
+                                 "video_is_backdrop": _args.scenario not in LIVE_SCENARIOS})
         # Send current zone snapshot immediately
         if zone_status:
             yield _sse("snapshot", {"zones": list(zone_status.values())})

@@ -66,21 +66,53 @@ def run_aws_test() -> int:
     return subprocess.call([sys.executable, str(bridge)])
 
 
-def run_vision_pipeline(video_path: str, profile: str = "platform") -> int:
-    """Run the YOLO11 + Optical Flow vision pipeline on a video file."""
+# Live scenarios and the pipeline profile that produces their data
+LIVE_PROFILES = {"live": "platform", "live_platform": "platform", "live_corridor": "corridor"}
+PROFILE_SCENARIO = {"platform": "live", "corridor": "live_corridor"}
+
+
+def profile_outputs(profile: str) -> tuple[Path, Path]:
+    """Readings JSONL and annotated video the pipeline writes for a profile."""
+    suffix = "" if profile == "platform" else f"_{profile}"
+    return (REPO_ROOT / f"live_readings{suffix}.jsonl",
+            REPO_ROOT / f"output_annotated{suffix}.mp4")
+
+
+def run_vision_pipeline(video_path: str | None, profile: str = "platform") -> int:
+    """Run the YOLO11 + Optical Flow vision pipeline for a profile (video optional)."""
     print("=" * 70)
-    print(f"  RUNNING VISION PIPELINE on {video_path} (profile={profile})")
+    print(f"  RUNNING VISION PIPELINE (profile={profile}, video={video_path or 'profile default'})")
     print("=" * 70)
     script = REPO_ROOT / "pipeline" / "vision_pipeline.py"
-    cmd = [
-        sys.executable,
-        str(script),
-        "--profile", profile,
-        "--video", video_path,
-        "--out", "live_readings.jsonl",
-        "--save-video", "output_annotated.mp4",
-    ]
-    return subprocess.call(cmd)
+    cmd = [sys.executable, str(script), "--profile", profile]
+    if video_path:
+        cmd += ["--video", video_path]
+    # Output file names come from the profile so platform and corridor never overwrite each other.
+    return subprocess.call(cmd, cwd=str(REPO_ROOT))
+
+
+def ensure_live_assets(scenario: str) -> None:
+    """Make sure a live_* scenario has its readings and annotated video, else say what to do."""
+    profile = LIVE_PROFILES.get(scenario)
+    if profile is None:
+        return
+    readings, video = profile_outputs(profile)
+    if readings.exists() and video.exists():
+        return
+    print(f"[main] '{scenario}' needs {readings.name} and {video.name}, which are missing.",
+          file=sys.stderr)
+    sys.path.insert(0, str(REPO_ROOT / "pipeline"))
+    import vision_pipeline
+    source = REPO_ROOT / vision_pipeline.load_profile(profile)["video"]
+    if source.exists():
+        print(f"[main] Generating them from {source.name} (takes a couple of minutes)...",
+              file=sys.stderr)
+        if run_vision_pipeline(None, profile) == 0:
+            return
+        sys.exit("[main] Vision pipeline failed.")
+    sys.exit(f"[main] Source video {source.name} not found. Put it in the repository root, "
+             f"or run: python main.py --video <your_video> --profile {profile}\n"
+             "[main] Or try a scenario that needs no video: python main.py --scenario buildup")
 
 
 def launch_dashboard(scenario: str, speed: float, port: int, host: str, no_browser: bool) -> None:
@@ -131,7 +163,7 @@ def main():
     )
     parser.add_argument(
         "--scenario",
-        choices=["buildup", "live", "normal", "bad_camera", "live_corridor"],
+        choices=["buildup", "live", "live_platform", "live_corridor", "normal", "bad_camera"],
         default="buildup",
         help="Scenario to stream on the dashboard (default: buildup)",
     )
@@ -205,7 +237,9 @@ def main():
         if ret != 0:
             print(f"[main] Vision pipeline exited with code {ret}", file=sys.stderr)
             sys.exit(ret)
-        args.scenario = "live"
+        args.scenario = PROFILE_SCENARIO[args.profile]
+
+    ensure_live_assets(args.scenario)
 
     # Default speed selection
     if args.speed is None:
