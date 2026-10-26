@@ -1,5 +1,5 @@
 # Vision pipeline (Workstream 1)
-opencv-python
+opencv-python>=5.0,<6
 ultralytics
 
 # Risk agent + Dashboard (Workstream 2 & 3)
@@ -9,5 +9,5 @@ uvicorn
 # AI Explanation Layer (Workstream 2 optional add-on)
 google-genai>=2.30.1
 
-# AWS Enterprise Cloud Bridge (S3 Evidence & SNS Emergency Dispatch)
+# AWS bridge (S3 evidence upload and SNS critical broadcast; simulated without credentials)
 boto3>=1.34.0

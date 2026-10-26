@@ -4,13 +4,13 @@ main.py
 Station Crowd Safety Agent — Unified System Entry Point
 
 Provides a single master command to launch any part of the system:
-- Full Operator Dashboard (with live CCTV video & Gemini AI Situation Briefs)
+- Full Operator Dashboard (annotated demo video and optional Gemini situation briefs)
 - Live Vision Pipeline processing on raw footage
 - Rule engine verification tests
 
 Usage Examples
 --------------
-1. Launch operator dashboard with real Indian railway CCTV platform footage (default):
+1. Launch operator dashboard with the Indian railway platform demo footage (default):
     python main.py
 
 2. Launch operator dashboard with the simulated crowd crush buildup (shows alerts, 10x speed):

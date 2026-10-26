@@ -4,7 +4,7 @@ agent/llm_enricher.py
 LLM Enrichment Layer — Workstream 2
 
 Calls Gemini (gemini-3.8-flash) to generate a plain-English operator-facing
-incident brief for Warning and Critical alerts.
+incident brief for Warning, Critical and Can't trust alerts.
 
 Safety contract (NON-NEGOTIABLE):
   - This module may ONLY write to alert["llm_summary"].

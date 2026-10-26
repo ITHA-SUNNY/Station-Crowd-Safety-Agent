@@ -1,5 +1,5 @@
 # ==============================================================================
-# Station Crowd Safety Agent — Production Dockerfile for AWS Deployment
+# Station Crowd Safety Agent — Dockerfile for AWS deployment
 # Compatible with AWS ECS, AWS App Runner, and AWS EC2 (t3.medium or g4dn.xlarge)
 # ==============================================================================
 
