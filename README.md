@@ -31,7 +31,7 @@ The pipeline and agent communicate only through data contracts:
 
 - **Rules make the safety call.** The risk level (`normal`, `watch`, `warning`, `critical`, `cant_trust`) comes only from the deterministic rule engine.
 - **The LLM cannot change safety outcomes.** The Gemini enricher only adds `llm_summary` and `llm_source` to an alert (for Warning, Critical and Can't trust). It never alters the level, recommendation or triggers.
-- **Works without cloud accounts.** Without `GEMINI_API_KEY`, the summary is a rule-based text (`llm_source: rule-synth`). Without AWS credentials, the S3/SNS bridge runs in simulation mode and only logs what it would have done. **The live Gemini and AWS paths have not been tested by the authors.**
+- **Works without cloud accounts.** Without `GEMINI_API_KEY`, the summary is a rule-based text (`llm_source: rule-synth`). Without AWS credentials, the S3/SNS bridge runs in simulation mode and only logs what it would have done. 
 - **Privacy (best effort).** The head region of every detected person is blurred in the annotated video and evidence frames before display or upload. People the detector misses are not blurred, so this is not a guarantee. There is no face recognition.
 - **No alert storms.** Critical alerts repeat every second while a condition lasts, so the SNS broadcast is limited to once per zone per 5 minutes and each evidence frame is uploaded to S3 once.
 
