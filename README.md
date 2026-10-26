@@ -133,9 +133,6 @@ To add a demo type, copy a file in `pipeline/profiles/`, edit the polygons (pixe
 
 ---
 
-## Docker
-
-A `Dockerfile` and `docker-compose.yml` are included for running the dashboard in a container (for example on AWS EC2, App Runner or ECS):
 
 ```powershell
 docker compose up --build
